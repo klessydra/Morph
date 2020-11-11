@@ -1,0 +1,2 @@
+add_subdirectory(convolution_tests)
+add_subdirectory(instruction_tests)
