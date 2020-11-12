@@ -20,8 +20,8 @@ then
 	USE_KLESSYDRA_T0_3TH=0 # if you are using klessydra-t0-3th (The four pipeline version of klessydra t0), set this to 1
 	USE_KLESSYDRA_T1_3TH=0 # if you are using klessydra-t1-3th (The four pipeline version of klessydra t1), set this to 1CV
 	USE_KLESSYDRA_T2_M=0   # if you are using klessydra-t2-m (A hart morphing version of klessydra T1), set this to 1CV
-	USE_KLESSYDRA_S1=1     # if you are using klessydra-s1 (Single hart version of klessydra t1), set this to 1CV
-	USE_KLESSYDRA_OoO=0    # if you are using klessydra-t1-3th (The four pipeline version of klessydra t1), set this to 1CV
+	USE_KLESSYDRA_S1=0     # if you are using klessydra-s1 (Single hart version of klessydra t1), set this to 1CV
+	USE_KLESSYDRA_OoO=1    # if you are using klessydra-t1-3th (The four pipeline version of klessydra t1), set this to 1CV
 	USE_KLESSYDRA_F0_3TH=0 # if you are using klessydra-f0-3th (The four pipeline version of klessydra f0), set this to 1
 	USE_KLESSYDRA_T13X_NETLIST=0 # if you are using klessydra-t1-3th (The four pipeline version of klessydra t1), set this to 1
 
