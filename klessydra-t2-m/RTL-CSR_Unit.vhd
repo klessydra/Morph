@@ -45,16 +45,17 @@ entity CSR_Unit is
     ie_except_data              : in  std_logic_vector(31 downto 0);
     ls_except_data              : in  std_logic_vector(31 downto 0);
     dsp_except_data             : in  array_2d(ACCL_NUM - 1 downto 0)(31 downto 0);
-    served_ie_except_condition  : in  std_logic_vector(THREAD_POOL_SIZE -1 downto 0);
-    served_ls_except_condition  : in  std_logic_vector(THREAD_POOL_SIZE -1 downto 0);
-    served_dsp_except_condition : in  std_logic_vector(THREAD_POOL_SIZE -1 downto 0);
-    harc_EXEC                   : in  integer range THREAD_POOL_SIZE -1 downto 0;
-    harc_to_csr                 : in  integer range THREAD_POOL_SIZE -1 downto 0;
+    served_ie_except_condition  : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
+    served_ls_except_condition  : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
+    served_dsp_except_condition : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
+    harc_sleep                  : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
+    harc_EXEC                   : in  integer range THREAD_POOL_SIZE-1 downto 0;
+    harc_to_csr                 : in  integer range THREAD_POOL_SIZE-1 downto 0;
     instr_word_IE               : in  std_logic_vector(31 downto 0);
-    served_except_condition     : in  std_logic_vector(THREAD_POOL_SIZE -1 downto 0);
-    served_mret_condition       : in  std_logic_vector(THREAD_POOL_SIZE -1 downto 0);
-    served_irq                  : in  std_logic_vector(THREAD_POOL_SIZE -1 downto 0);
-    pc_except_value_wire        : in  array_2d(THREAD_POOL_SIZE -1 downto 0)(31 downto 0);
+    served_except_condition     : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
+    served_mret_condition       : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
+    served_irq                  : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
+    pc_except_value_wire        : in  array_2d(THREAD_POOL_SIZE-1 downto 0)(31 downto 0);
     dbg_req_o                   : in  std_logic;
     data_addr_internal          : in  std_logic_vector(31 downto 0);
     jump_instr                  : in  std_logic;
@@ -97,10 +98,10 @@ end entity;
 
 architecture CSR of CSR_Unit is
 
-  subtype harc_range is integer range THREAD_POOL_SIZE - 1 downto 0;
-  subtype accl_range is integer range ACCL_NUM - 1 downto 0;
+  subtype harc_range is integer range THREAD_POOL_SIZE-1 downto 0;
+  subtype accl_range is integer range ACCL_NUM-1 downto 0;
 
-  signal pc_IE_replicated	: array_2d(harc_range)(31 downto 0);	
+  signal pc_IE_replicated : array_2d(harc_range)(31 downto 0);	
 	
   -- Control Status Register (CSR) signals 
   signal PCCRs       : array_2d(harc_range)(31 downto 0);  -- still not implemented
@@ -150,6 +151,13 @@ architecture CSR of CSR_Unit is
   signal MTVEC_internal         : array_2d(harc_range)(31 downto 0);
   signal irq_ack_o_internal     : std_logic;
   signal trap_hndlr         	: std_logic_vector(harc_range);
+
+  signal served_ie_except_condition_lat  : std_logic_vector(harc_range);
+  signal served_ls_except_condition_lat  : std_logic_vector(harc_range);
+  signal served_dsp_except_condition_lat : std_logic_vector(harc_range);
+  signal served_except_condition_lat     : std_logic_vector(harc_range);
+  signal served_mret_condition_lat       : std_logic_vector(harc_range);
+
 
   function rs1 (signal instr : in std_logic_vector(31 downto 0)) return integer is
   begin
@@ -230,11 +238,14 @@ begin
           MHPMEVENT9(h)                     <= PCER_RESET_VALUE(8);
           MHPMEVENT10(h)                    <= PCER_RESET_VALUE(9);
         end if;
-        MIP_internal(h)                   <= MIP_RESET_VALUE;
-
-        csr_instr_done_replicated(h)      <= '0';
-        csr_access_denied_o_replicated(h) <= '0';
-        csr_rdata_o_replicated(h)         <= (others => '0');
+        MIP_internal(h)                     <= MIP_RESET_VALUE;
+        served_ie_except_condition_lat(h)   <= '0'; 
+        served_ls_except_condition_lat(h)   <= '0'; 
+        served_dsp_except_condition_lat(h)  <= '0'; 
+        served_except_condition_lat(h)      <= '0';
+        csr_instr_done_replicated(h)        <= '0';
+        csr_access_denied_o_replicated(h)   <= '0';
+        csr_rdata_o_replicated(h)           <= (others => '0');
 
       elsif rising_edge(clk_i) then
         -- CSR updating for all possible sources follows.
@@ -252,7 +263,10 @@ begin
         --  ██║██║  ██║╚██████╔╝██╔╝   ███████╗██╔╝ ██╗╚██████╗███████╗██║        ██║       ██║  ██║██║  ██║██║ ╚████║██████╔╝███████╗███████╗██║  ██║  --
         --  ╚═╝╚═╝  ╚═╝ ╚══▀▀═╝ ╚═╝    ╚══════╝╚═╝  ╚═╝ ╚═════╝╚══════╝╚═╝        ╚═╝       ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝╚═════╝ ╚══════╝╚══════╝╚═╝  ╚═╝  --
         --------------------------------------------------------------------------------------------------------------------------------------------------        
-                                                                                                                    
+        served_ie_except_condition_lat(h)   <= served_ie_except_condition(h);
+        served_ls_except_condition_lat(h)   <= served_ls_except_condition(h);
+        served_dsp_except_condition_lat(h)  <= served_dsp_except_condition(h);
+        served_except_condition_lat(h)      <= served_except_condition(h);
         -- synchronous assignment to MIP_internal bits:
         -- this is Pulpino-specific assignment, i.e. the timer-related IRQ vector value
         if h = 0 and unsigned(irq_id_i) >= 28 and irq_i = '1' then
@@ -313,16 +327,16 @@ begin
           MSTATUS_internal(h)(1) <= MSTATUS_internal(h)(0);
           
         --  Exception-caused CSR updating ----------------------------------
-        elsif served_except_condition(h) = '1' then
-          if served_dsp_except_condition(h) = '1' then
+        elsif served_except_condition_lat(h) = '1' then
+          if served_dsp_except_condition_lat(h) = '1' then
             if replicate_accl_en = 1 then
               MCAUSE_internal(h)     <= dsp_except_data(h);  -- passed from DSP Unit
             elsif replicate_accl_en = 0 then
               MCAUSE_internal(h)     <= dsp_except_data(0);  -- passed from DSP Unit
             end if;
-          elsif served_ls_except_condition(h) = '1' then
+          elsif served_ls_except_condition_lat(h) = '1' then
             MCAUSE_internal(h)     <= ls_except_data;  -- passed from LS unit
-          elsif served_ie_except_condition(h) = '1' then
+          elsif served_ie_except_condition_lat(h) = '1' then
             MCAUSE_internal(h)     <= ie_except_data;  -- passed from IE Stage
           end if;
           MESTATUS(h)(2 downto 1)        <= MSTATUS_internal(h);

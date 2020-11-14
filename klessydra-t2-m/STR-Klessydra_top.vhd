@@ -134,8 +134,8 @@ architecture Klessydra_T2 of klessydra_t2_m_core is
 
   subtype harc_range is integer range THREAD_POOL_SIZE - 1 downto 0;  -- will be used replicated units in the core
 
-  constant ACCL_NUM : natural := (THREAD_POOL_SIZE - (THREAD_POOL_SIZE-1)*(1-replicate_accl_en));
-  constant FU_NUM   : natural := (ACCL_NUM - (ACCL_NUM-1)*(multithreaded_accl_en));
+  constant ACCL_NUM : natural := (THREAD_POOL_SIZE-(THREAD_POOL_SIZE-1)*(1-replicate_accl_en));
+  constant FU_NUM   : natural := (ACCL_NUM-(ACCL_NUM-1)*(multithreaded_accl_en));
 
   subtype accl_range is integer range ACCL_NUM - 1 downto 0;  -- will be used replicated accelerators in the core 
   subtype fu_range   is integer range FU_NUM - 1 downto 0; -- will be used replicated accelerators in the core 
@@ -332,6 +332,7 @@ architecture Klessydra_T2 of klessydra_t2_m_core is
     served_ie_except_condition  : in  std_logic_vector(harc_range);
     served_ls_except_condition  : in  std_logic_vector(harc_range);
     served_dsp_except_condition : in  std_logic_vector(harc_range);
+    harc_sleep                  : in  std_logic_vector(harc_range);
     harc_EXEC                   : in  harc_range;
     harc_to_csr                 : in  harc_range;
     instr_word_IE               : in  std_logic_vector(31 downto 0);
@@ -348,7 +349,7 @@ architecture Klessydra_T2 of klessydra_t2_m_core is
     misaligned_err              : in  std_logic;
     WFI_Instr                   : in  std_logic;
     csr_wdata_i                 : in  std_logic_vector(31 downto 0);
-    csr_op_i                    : in  std_logic_vector(2 downto 0);
+    csr_op_i                    : in  std_logic_vector(2  downto 0);
     csr_addr_i                  : in  std_logic_vector(11 downto 0);
     csr_instr_done              : out std_logic;
     csr_access_denied_o         : out std_logic;
@@ -644,6 +645,7 @@ begin
       served_ie_except_condition  => served_ie_except_condition,
       served_ls_except_condition  => served_ls_except_condition,
       served_dsp_except_condition => served_dsp_except_condition,
+      harc_sleep                  => harc_sleep,
       harc_EXEC                   => harc_EXEC,
       harc_to_csr                 => harc_to_csr,
       instr_word_IE               => instr_word_IE,

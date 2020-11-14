@@ -30,43 +30,43 @@ entity Program_Counter is
   port (
     absolute_jump                     : in  std_logic;
     data_we_o_lat                     : in  std_logic;
-    PC_offset                         : in  array_2D(THREAD_POOL_SIZE - 1 downto 0)(31 downto 0);
+    PC_offset                         : in  array_2D(THREAD_POOL_SIZE-1 downto 0)(31 downto 0);
     taken_branch                      : in  std_logic;
     ie_taken_branch                   : in  std_logic;
     ls_taken_branch                   : in  std_logic;
-    dsp_taken_branch                  : in  std_logic_vector(ACCL_NUM - 1 downto 0);
+    dsp_taken_branch                  : in  std_logic_vector(ACCL_NUM-1 downto 0);
     set_branch_condition              : in  std_logic;
     ie_except_condition               : in  std_logic;
     ls_except_condition               : in  std_logic;
-    dsp_except_condition              : in  std_logic_vector(ACCL_NUM - 1 downto 0);
+    dsp_except_condition              : in  std_logic_vector(ACCL_NUM-1 downto 0);
     set_except_condition              : in  std_logic;
     set_mret_condition                : in  std_logic;
     set_wfi_condition                 : in  std_logic;
-    harc_ID                           : in  integer range THREAD_POOL_SIZE - 1 downto 0;
-    harc_EXEC                         : in  integer range THREAD_POOL_SIZE - 1 downto 0;
+    harc_ID                           : in  integer range THREAD_POOL_SIZE-1 downto 0;
+    harc_EXEC                         : in  integer range THREAD_POOL_SIZE-1 downto 0;
     instr_rvalid_IE                   : in  std_logic;
     pc_ID                             : in  std_logic_vector(31 downto 0);
     pc_IE                             : in  std_logic_vector(31 downto 0);
-    MSTATUS                           : in  array_2d(THREAD_POOL_SIZE - 1 downto 0)(1 downto 0);
-    MIP, MEPC, MCAUSE, MTVEC          : in  array_2D(THREAD_POOL_SIZE - 1 downto 0)(31 downto 0);
+    MSTATUS                           : in  array_2d(THREAD_POOL_SIZE-1 downto 0)(1 downto 0);
+    MIP, MEPC, MCAUSE, MTVEC          : in  array_2D(THREAD_POOL_SIZE-1 downto 0)(31 downto 0);
     instr_word_IE                     : in  std_logic_vector(31 downto 0);
     reset_state                       : in  std_logic;
     pc_IF                             : out std_logic_vector(31 downto 0);
-    harc_IF                           : out integer range THREAD_POOL_SIZE - 1 downto 0;
-    served_ie_except_condition        : out std_logic_vector(THREAD_POOL_SIZE - 1 downto 0);
-    served_ls_except_condition        : out std_logic_vector(THREAD_POOL_SIZE - 1 downto 0);
-    served_dsp_except_condition       : out std_logic_vector(THREAD_POOL_SIZE - 1 downto 0);
-    served_except_condition           : out std_logic_vector(THREAD_POOL_SIZE - 1 downto 0);
-    served_mret_condition             : out std_logic_vector(THREAD_POOL_SIZE - 1 downto 0);
-    served_irq                        : in  std_logic_vector(THREAD_POOL_SIZE - 1 downto 0);
-    taken_branch_pending              : out std_logic_vector(THREAD_POOL_SIZE - 1 downto 0);
-    taken_branch_pc_lat               : out array_2D(THREAD_POOL_SIZE - 1 downto 0)(31 downto 0);
-    incremented_pc                    : out array_2D(THREAD_POOL_SIZE - 1 downto 0)(31 downto 0);
-    mepc_incremented_pc               : out array_2D(THREAD_POOL_SIZE - 1 downto 0)(31 downto 0);
-    mepc_interrupt_pc                 : out array_2D(THREAD_POOL_SIZE - 1 downto 0)(31 downto 0);
-    irq_pending                       : out std_logic_vector(THREAD_POOL_SIZE - 1 downto 0);
-    harc_sleep                        : out std_logic_vector(THREAD_POOL_SIZE - 1 downto 0);
-    PC_offset_ID                      : in  array_2D(THREAD_POOL_SIZE - 1 downto 0)(31 downto 0);
+    harc_IF                           : out integer range THREAD_POOL_SIZE-1 downto 0;
+    served_ie_except_condition        : out std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
+    served_ls_except_condition        : out std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
+    served_dsp_except_condition       : out std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
+    served_except_condition           : out std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
+    served_mret_condition             : out std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
+    served_irq                        : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
+    taken_branch_pending              : out std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
+    taken_branch_pc_lat               : out array_2D(THREAD_POOL_SIZE-1 downto 0)(31 downto 0);
+    incremented_pc                    : out array_2D(THREAD_POOL_SIZE-1 downto 0)(31 downto 0);
+    mepc_incremented_pc               : out array_2D(THREAD_POOL_SIZE-1 downto 0)(31 downto 0);
+    mepc_interrupt_pc                 : out array_2D(THREAD_POOL_SIZE-1 downto 0)(31 downto 0);
+    irq_pending                       : out std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
+    harc_sleep                        : out std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
+    PC_offset_ID                      : in  array_2D(THREAD_POOL_SIZE-1 downto 0)(31 downto 0);
     set_branch_condition_ID           : in  std_logic;
     clk_i                             : in  std_logic;
     rst_ni                            : in  std_logic;
@@ -80,34 +80,42 @@ end entity;
 
 architecture PC of Program_counter is
 
-  subtype harc_range is integer range THREAD_POOL_SIZE - 1 downto 0;
-  subtype accl_range is integer range ACCL_NUM - 1 downto 0;
+  subtype harc_range is integer range THREAD_POOL_SIZE-1 downto 0;
+  subtype accl_range is integer range ACCL_NUM-1 downto 0;
 
   -- pc updater signals
-  signal pc_update_enable                   : std_logic_vector(harc_range);
-  signal taken_branch_replicated            : std_logic_vector(harc_range);
-  signal set_branch_condition_replicated    : std_logic_vector(harc_range);
-  signal set_wfi_condition_replicated       : std_logic_vector(harc_range);
-  signal ls_except_condition_replicated     : std_logic_vector(harc_range);
-  signal ie_except_condition_replicated     : std_logic_vector(harc_range);
-  signal dsp_except_condition_replicated    : std_logic_vector(harc_range);
-  signal set_except_condition_replicated    : std_logic_vector(harc_range);
-  signal set_mret_condition_replicated      : std_logic_vector(harc_range);
-  signal set_branch_condition_ID_replicated : std_logic_vector(harc_range);
-  signal relative_to_PC                     : array_2D(harc_range)(31 downto 0);
-  signal pc                                 : array_2D(harc_range)(31 downto 0);
-  signal pc_wire                            : array_2D(harc_range)(31 downto 0);
-  signal boot_pc                            : std_logic_vector(31 downto 0);
-  signal harc_IF_internal                   : harc_range;
-  signal harc_IF_internal_wire              : harc_range;
-  signal mret_condition_pending_internal    : std_logic_vector(harc_range);
-  signal mepc_incremented_pc_internal       : array_2D(harc_range)(31 downto 0);
-  signal incremented_pc_internal            : array_2D(harc_range)(31 downto 0);
-  signal mepc_interrupt_pc_internal         : array_2D(harc_range)(31 downto 0);
-  signal taken_branch_pc_lat_internal       : array_2D(harc_range)(31 downto 0);
-  signal taken_branch_pc_pending_internal   : array_2D(harc_range)(31 downto 0);
-  signal taken_branch_pending_internal      : std_logic_vector(harc_range);
-  signal irq_pending_internal               : std_logic_vector(harc_range);
+  signal pc_update_enable                     : std_logic_vector(harc_range);
+  signal taken_branch_replicated              : std_logic_vector(harc_range);
+  signal set_branch_condition_replicated      : std_logic_vector(harc_range);
+  signal set_wfi_condition_replicated         : std_logic_vector(harc_range);
+  signal ls_except_condition_replicated       : std_logic_vector(harc_range);
+  signal ie_except_condition_replicated       : std_logic_vector(harc_range);
+  signal dsp_except_condition_replicated      : std_logic_vector(harc_range);
+  signal set_except_condition_replicated      : std_logic_vector(harc_range);
+  signal set_mret_condition_replicated        : std_logic_vector(harc_range);
+  signal set_branch_condition_ID_replicated   : std_logic_vector(harc_range);
+  signal relative_to_PC                       : array_2D(harc_range)(31 downto 0);
+  signal pc                                   : array_2D(harc_range)(31 downto 0);
+  signal pc_wire                              : array_2D(harc_range)(31 downto 0);
+  signal boot_pc                              : std_logic_vector(31 downto 0);
+  signal harc_IF_internal                     : harc_range;
+  signal harc_IF_internal_wire                : harc_range;
+  signal mret_condition_pending_internal      : std_logic_vector(harc_range);
+  signal mepc_incremented_pc_internal         : array_2D(harc_range)(31 downto 0);
+  signal incremented_pc_internal              : array_2D(harc_range)(31 downto 0);
+  signal mepc_interrupt_pc_internal           : array_2D(harc_range)(31 downto 0);
+  signal taken_branch_pc_lat_internal         : array_2D(harc_range)(31 downto 0);
+  signal taken_branch_pc_pending_internal     : array_2D(harc_range)(31 downto 0);
+  signal taken_branch_pending_internal        : std_logic_vector(harc_range);
+  signal irq_pending_internal                 : std_logic_vector(harc_range);
+
+  signal taken_branch_pc_pending_internal_lat : array_2D(harc_range)(31 downto 0);
+  signal taken_branch_pending_internal_lat    : std_logic_vector(harc_range);
+  signal served_ie_except_condition_lat       : std_logic_vector(harc_range);
+  signal served_ls_except_condition_lat       : std_logic_vector(harc_range);
+  signal served_dsp_except_condition_lat      : std_logic_vector(harc_range);
+  signal served_except_condition_lat          : std_logic_vector(harc_range);
+  signal served_mret_condition_lat            : std_logic_vector(harc_range);
 
 
   ------------------------------------------------------------------------------------------------------------
@@ -119,6 +127,7 @@ architecture PC of Program_counter is
     signal set_branch_condition_ID       : in    std_logic;
     signal set_wfi_condition             : in    std_logic;
     signal taken_branch_pending          : inout std_logic;
+    signal taken_branch_pending_lat      : in    std_logic;
     signal irq_pending                   : in    std_logic;
     signal ie_except_condition           : in    std_logic;
     signal ls_except_condition           : in    std_logic;
@@ -127,7 +136,8 @@ architecture PC of Program_counter is
     signal set_mret_condition            : in    std_logic;
     signal pc                            : inout std_logic_vector(31 downto 0);
     signal taken_branch_pc_lat           : in    std_logic_vector(31 downto 0);
-    signal taken_branch_pc_pending       : in    std_logic_vector(31 downto 0);
+    signal taken_branch_pc_pending       : inout std_logic_vector(31 downto 0);
+    signal taken_branch_pc_pending_lat   : in    std_logic_vector(31 downto 0);
     signal incremented_pc                : in    std_logic_vector(31 downto 0);
     signal boot_pc                       : in    std_logic_vector(31 downto 0);
     signal pc_update_enable              : in    std_logic;
@@ -138,29 +148,27 @@ architecture PC of Program_counter is
     signal served_mret_condition         : out   std_logic) is
   begin
     if pc_update_enable = '1' then
-
       -- interrupt service launched in the previous instr. cycle
       -- this is done for a second instr. cycle for proper synchronization of flushing
       -- nothing pending    
-      if not taken_branch = '1' and not taken_branch_pending = '1' and not set_branch_condition_ID = '1' then
-        pc                      <= incremented_pc;
-        served_except_condition <= '0';
+      if not taken_branch = '1' and not taken_branch_pending_lat = '1' and not set_branch_condition_ID = '1' then
+        pc                          <= incremented_pc;
+        served_except_condition     <= '0';
         served_ie_except_condition  <= '0';
         served_ls_except_condition  <= '0';
         served_dsp_except_condition <= '0';
-        served_mret_condition   <= '0';
-      -- taken_branch pending 
+        served_mret_condition       <= '0';
       elsif taken_branch = '1' or set_branch_condition_ID = '1' then
-        pc                      <= taken_branch_pc_lat;
-        taken_branch_pending    <= '0';
+        pc                          <= taken_branch_pc_lat;
+        taken_branch_pending        <= '0';
         served_ie_except_condition  <= '1' when ie_except_condition  = '1' else '0'; -- for CS units;
         served_ls_except_condition  <= '1' when ls_except_condition  = '1' else '0'; -- for CS units;
         served_dsp_except_condition <= '1' when dsp_except_condition = '1' else '0'; -- for CS units;
         served_except_condition     <= '1' when set_except_condition = '1' else '0'; -- for CS units;
         served_mret_condition       <= '1' when set_mret_condition   = '1' else '0'; -- for CS units;
-      elsif  taken_branch_pending = '1' then
-        pc                      <= taken_branch_pc_pending;
-        taken_branch_pending    <= '0';
+      elsif taken_branch_pending_lat = '1' then
+        pc                          <= taken_branch_pc_pending_lat;
+        taken_branch_pending        <= '0';
         served_ie_except_condition  <= '1' when ie_except_condition  = '1' else '0'; -- for CS units;
         served_ls_except_condition  <= '1' when ls_except_condition  = '1' else '0'; -- for CS units;
         served_dsp_except_condition <= '1' when dsp_except_condition = '1' else '0'; -- for CS units;
@@ -173,8 +181,9 @@ architecture PC of Program_counter is
     else                                -- sets registers to record pending requests
       served_except_condition <= '0';
       served_mret_condition   <= '0';
-      if taken_branch = '1' then
+      if taken_branch = '1' or set_branch_condition_ID = '1' then
         taken_branch_pending <= '1';
+        taken_branch_pc_pending <= taken_branch_pc_lat;
       end if;
       if set_except_condition = '1' then
         served_except_condition <= '1';
@@ -309,7 +318,7 @@ begin
                                 and (harc_IF_internal = h
                                 or taken_branch_replicated(h) = '1'
                                 or set_wfi_condition_replicated(h) = '1'
-                                or taken_branch_pending_internal(h) = '1'
+                                or taken_branch_pending_internal_lat(h) = '1'
                                 or set_branch_condition_ID_replicated(h) = '1' )
                            else '0';
 
@@ -318,39 +327,71 @@ begin
 
     begin
       if rst_ni = '0' then 
-        pc(h)    <= ( 31 downto 8 => '0' ) & std_logic_vector( to_unsigned(128,8));
+        pc(h)    <= (31 downto 8 => '0' ) & std_logic_vector( to_unsigned(128,8));
+        taken_branch_pc_pending_internal_lat(h)  <= (others => '0');
+        taken_branch_pending_internal_lat(h)     <= '0';
+        served_ie_except_condition_lat(h)        <= '0';
+        served_ls_except_condition_lat(h)        <= '0';
+        served_dsp_except_condition_lat(h)       <= '0';
+        served_except_condition_lat(h)           <= '0';
+        served_mret_condition_lat(h)             <= '0';
       elsif rising_edge(clk_i) then
-        pc(h) <= pc_wire(h);
+        pc(h)                                   <= pc_wire(h);
+        taken_branch_pc_pending_internal_lat(h) <= taken_branch_pc_pending_internal(h);
+        taken_branch_pending_internal_lat(h)    <= taken_branch_pending_internal(h);
+        served_ie_except_condition_lat(h)       <= served_ie_except_condition(h);
+        served_ls_except_condition_lat(h)       <= served_ls_except_condition(h);
+        served_dsp_except_condition_lat(h)      <= served_dsp_except_condition(h);
+        served_except_condition_lat(h)          <= served_except_condition(h);
+        served_mret_condition_lat(h)            <= served_mret_condition(h);
       end if;
     end process;
 
 
     pc_updater_comb : process(all)
     begin
-        pc_wire(h)                          <= pc(h);  -- better to put 0 to ensure clear synthesis
-        taken_branch_pc_pending_internal(h) <= (others => '0');
-        taken_branch_pending_internal(h)    <= '0';
-        served_ie_except_condition(h)       <= '0';
-        served_ls_except_condition(h)       <= '0';
-        served_dsp_except_condition(h)      <= '0';
-        served_except_condition(h)          <= '0';
-        served_mret_condition(h)            <= '0';
-        -- synch.ly updates pc with new value depending on conditions pending 
-        -- synch.ly raises "served" signal for the condition that is being served 
-        -- synch.ly lowers "served" signal for other conditions
-        if taken_branch_replicated(h) = '1' then 
-          taken_branch_pc_pending_internal(h) <= taken_branch_pc_lat_internal(h);
-        end if;
-        if reset_state = '1' then
-          pc_wire(h) <= boot_pc;
-        else
-          pc_update(MTVEC(h), instr_gnt_i, taken_branch_replicated(h), set_branch_condition_ID_replicated(h), set_wfi_condition_replicated(h), taken_branch_pending_internal(h), 
-                    irq_pending_internal(h),ie_except_condition_replicated(h), ls_except_condition_replicated(h), dsp_except_condition_replicated(h),
-          set_except_condition_replicated(h), set_mret_condition_replicated(h), pc_wire(h), taken_branch_pc_lat_internal(h), taken_branch_pc_pending_internal(h),
-          incremented_pc_internal(h), boot_pc, pc_update_enable(h), served_ie_except_condition(h), served_ls_except_condition(h),
-          served_dsp_except_condition(h), served_except_condition(h),
-                    served_mret_condition(h));
-        end if;
+      pc_wire(h)                          <= pc(h);
+      taken_branch_pc_pending_internal(h) <= taken_branch_pc_pending_internal_lat(h);
+      taken_branch_pending_internal(h)    <= taken_branch_pending_internal_lat(h);
+      served_ie_except_condition(h)       <= served_ie_except_condition_lat(h);
+      served_ls_except_condition(h)       <= served_ls_except_condition_lat(h);
+      served_dsp_except_condition(h)      <= served_dsp_except_condition_lat(h);
+      served_except_condition(h)          <= served_except_condition_lat(h);
+      served_mret_condition(h)            <= served_mret_condition_lat(h);
+      -- synch.ly updates pc with new value depending on conditions pending 
+      -- synch.ly raises "served" signal for the condition that is being served 
+      -- synch.ly lowers "served" signal for other conditions
+      if reset_state = '1' then
+        pc_wire(h) <= boot_pc;
+      else
+        pc_update(
+          MTVEC(h),
+          instr_gnt_i,
+          taken_branch_replicated(h),
+          set_branch_condition_ID_replicated(h),
+          set_wfi_condition_replicated(h),
+          taken_branch_pending_internal(h), 
+          taken_branch_pending_internal_lat(h),
+          irq_pending_internal(h),
+          ie_except_condition_replicated(h),
+          ls_except_condition_replicated(h), 
+          dsp_except_condition_replicated(h),
+          set_except_condition_replicated(h), 
+          set_mret_condition_replicated(h), 
+          pc_wire(h), 
+          taken_branch_pc_lat_internal(h), 
+          taken_branch_pc_pending_internal(h),
+          taken_branch_pc_pending_internal_lat(h), 
+          incremented_pc_internal(h), 
+          boot_pc, 
+          pc_update_enable(h), 
+          served_ie_except_condition(h), 
+          served_ls_except_condition(h),
+          served_dsp_except_condition(h), 
+          served_except_condition(h), 
+          served_mret_condition(h)
+        );
+      end if;
     end process;
 
 
