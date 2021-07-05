@@ -43,8 +43,9 @@ package riscv_klessydra is
   type array_2d     is array (integer range<>) of std_logic_vector;
   type array_3d     is array (integer range<>) of array_2d;
   type array_2d_int is array (integer range<>) of integer;
+  type array_2d_nat is array (integer range<>) of natural;
 
-  type fsm_IE_states is (sleep, reset, normal, csr_instr_wait_state, debug);
+  type fsm_IE_states is (sleep, normal, csr_instr_wait_state);
   type mulh_states   is (init, mult, accum);
   type mul_states    is (mult, accum);
   type div_states    is (init, divide);
@@ -70,9 +71,10 @@ package riscv_klessydra is
 --  ╚══════╝╚═╝  ╚═╝╚══════╝ ╚═════╝    ╚═════╝ ╚══════╝╚═╝     ╚═╝╚═╝  ╚═══╝╚══════╝╚══════╝  --
 -------------------------------------------------------------------------------------------------
 
-  constant EXEC_UNIT_INSTR_SET_SIZE : natural := 52;  -- total number of instructions in the exec unit
-  constant LS_UNIT_INSTR_SET_SIZE   : natural := 12;  -- total number of instructions in the ld_str unit
-  constant DSP_UNIT_INSTR_SET_SIZE  : natural := 17;  -- total number of instructions in the dsp unit
+  constant EXEC_UNIT_INSTR_SET_SIZE   : natural := 52;  -- total number of instructions in the exec unit
+  constant LS_UNIT_INSTR_SET_SIZE     : natural := 12;  -- total number of instructions in the ld_str unit
+  constant DSP_UNIT_INSTR_SET_SIZE    : natural := 17;  -- total number of instructions in the dsp unit
+  constant BRANCHING_INSTR_SET_SIZE   : natural := 3;   -- total number of instructions in the dsp unit
 
 
   -- EXEC UNIT INSTR SET --------------------------------------------------------------------------------------------------------------------
@@ -145,7 +147,7 @@ package riscv_klessydra is
   constant KBCASTLD_pattern : std_logic_vector(LS_UNIT_INSTR_SET_SIZE-1 downto 0) := "100000000000";
   --------------------------------------------------------------------------------------------------
 
-  -- DSP UNIT INSTR SET-------------------------------------------------------------------------------------
+  -- DSP UNIT INSTR SET ------------------------------------------------------------------------------------
   constant KADDV_pattern      : std_logic_vector(DSP_UNIT_INSTR_SET_SIZE-1 downto 0) := "00000000000000001";
   constant KSUBV_pattern      : std_logic_vector(DSP_UNIT_INSTR_SET_SIZE-1 downto 0) := "00000000000000010";
   constant KVMUL_pattern      : std_logic_vector(DSP_UNIT_INSTR_SET_SIZE-1 downto 0) := "00000000000000100";
@@ -164,6 +166,12 @@ package riscv_klessydra is
   constant KSVSLT_pattern     : std_logic_vector(DSP_UNIT_INSTR_SET_SIZE-1 downto 0) := "01000000000000000";
   constant KVCP_pattern       : std_logic_vector(DSP_UNIT_INSTR_SET_SIZE-1 downto 0) := "10000000000000000";
   ----------------------------------------------------------------------------------------------------------
+
+  -- BRANCHING INSTRUCTIONS in FETCH unit -------------------------------------------------------
+  constant JAL_FETCH_pattern    : std_logic_vector(BRANCHING_INSTR_SET_SIZE-1 downto 0) := "001";
+  constant JALR_FETCH_pattern   : std_logic_vector(BRANCHING_INSTR_SET_SIZE-1 downto 0) := "010";
+  constant BRANCH_FETCH_pattern : std_logic_vector(BRANCHING_INSTR_SET_SIZE-1 downto 0) := "100";
+  -----------------------------------------------------------------------------------------------
 
   constant ADDI_bit_position    : natural := 0;
   constant SLTI_bit_position    : natural := 1;
@@ -248,6 +256,10 @@ package riscv_klessydra is
   constant KVSLT_bit_position    : natural := 14;
   constant KSVSLT_bit_position   : natural := 15;
   constant KVCP_bit_position     : natural := 16;
+
+  constant JAL_FETCH_instr       : natural := 0;
+  constant JALR_FETCH_instr      : natural := 1;
+  constant BRANCH_FETCH_instr    : natural := 2;
 
 -----------------------------------------------------------------------------------------
 --   ██████╗███████╗██████╗     ██████╗ ███████╗███████╗██╗███╗   ██╗███████╗███████╗  --
@@ -560,6 +572,11 @@ package riscv_klessydra is
   function B_immediate(signal instr  : in std_logic_vector(31 downto 0)) return std_logic_vector;
   function U_immediate(signal instr  : in std_logic_vector(31 downto 0)) return std_logic_vector;
   function UJ_immediate(signal instr : in std_logic_vector(31 downto 0)) return std_logic_vector;
+  function I_imm(signal instr        : in std_logic_vector(31 downto 0)) return std_logic_vector;
+  function S_imm(signal instr        : in std_logic_vector(31 downto 0)) return std_logic_vector;
+  function B_imm(signal instr        : in std_logic_vector(31 downto 0)) return std_logic_vector;
+  function U_imm(signal instr        : in std_logic_vector(31 downto 0)) return std_logic_vector;
+  function UJ_imm(signal instr       : in std_logic_vector(31 downto 0)) return std_logic_vector;
   function shamt(signal instr        : in std_logic_vector(31 downto 0)) return std_logic_vector;
   function OPCODE(signal instr       : in std_logic_vector(31 downto 0)) return std_logic_vector;
   function FUNCT3(signal instr       : in std_logic_vector(31 downto 0)) return std_logic_vector;
@@ -621,6 +638,33 @@ package body riscv_klessydra is
   begin
     return std_logic_vector(resize(signed(instr(31) & instr(19 downto 12) & instr(20)
                                           & instr(30 downto 21) & '0'), 32));
+  end;
+
+  function I_imm(signal instr : in std_logic_vector(31 downto 0)) return std_logic_vector is
+  begin
+    return std_logic_vector(signed(instr(31) & instr(30 downto 20)));
+  end;
+
+  function S_imm(signal instr : in std_logic_vector(31 downto 0)) return std_logic_vector is
+  begin
+    return std_logic_vector(signed(instr(31 downto 25) & instr(11 downto 8) & instr(7)));
+  end;
+
+  function B_imm(signal instr : in std_logic_vector(31 downto 0)) return std_logic_vector is
+  begin
+    return std_logic_vector(signed(instr(31) & instr(7) & instr(30 downto 25)
+                                          & instr(11 downto 8) & '0'));
+  end;
+
+  function U_imm(signal instr : in std_logic_vector(31 downto 0)) return std_logic_vector is
+  begin
+    return instr(31 downto 12);
+  end;
+
+  function UJ_imm(signal instr : in std_logic_vector(31 downto 0)) return std_logic_vector is
+  begin
+    return std_logic_vector(signed(instr(31) & instr(19 downto 12) & instr(20)
+                                          & instr(30 downto 21) & '0'));
   end;
 
   function shamt(signal instr : in std_logic_vector(31 downto 0)) return std_logic_vector is

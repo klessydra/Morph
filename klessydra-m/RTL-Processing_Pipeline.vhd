@@ -24,11 +24,15 @@ use work.riscv_klessydra.all;
 -- pipeline  pinout --------------------
 entity Pipeline is
   generic(
-    THREAD_POOL_SIZE           : integer;
+    THREAD_POOL_SIZE           : natural;
     LUTRAM_RF                  : natural;
     RV32E                      : natural;
     RV32M                      : natural;
+    morph_en                   : natural;
+    fetch_stage_en             : natural;
     branch_predict_en          : natural;
+    btb_en                     : natural;
+    btb_len                    : natural;
     superscalar_exec_en        : natural;
     accl_en                    : natural;
     replicate_accl_en          : natural;
@@ -57,12 +61,11 @@ entity Pipeline is
   );
   port (
     pc_IF                      : in  std_logic_vector(31 downto 0);
-    harc_IF                    : in  integer range THREAD_POOL_SIZE-1 downto 0;
+    harc_IF                    : in  natural range THREAD_POOL_SIZE-1 downto 0;
     irq_pending                : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     csr_instr_done             : in  std_logic;
     csr_access_denied_o        : in  std_logic;
     csr_rdata_o                : in  std_logic_vector (31 downto 0);
-    dbg_req_o                  : in  std_logic;
     MVSIZE                     : in  array_2d(THREAD_POOL_SIZE-1 downto 0)(Addr_Width downto 0);
     MVTYPE                     : in  array_2d(THREAD_POOL_SIZE-1 downto 0)(3 downto 0);
     MPSCLFAC                   : in  array_2d(THREAD_POOL_SIZE-1 downto 0)(4 downto 0);
@@ -70,7 +73,6 @@ entity Pipeline is
     PCER                       : in  array_2d(THREAD_POOL_SIZE-1 downto 0)(31 downto 0);
     served_irq                 : out std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     WFI_Instr                  : out std_logic;
-    reset_state                : out std_logic;
     misaligned_err             : out std_logic;
     pc_ID                      : out std_logic_vector(31 downto 0);
     pc_IE                      : out std_logic_vector(31 downto 0);
@@ -82,6 +84,7 @@ entity Pipeline is
     ls_taken_branch            : out std_logic;
     dsp_taken_branch           : out std_logic_vector(ACCL_NUM-1 downto 0);
     set_branch_condition       : out std_logic;
+    set_except_condition       : out std_logic;
     ie_except_condition        : out std_logic;
     ls_except_condition        : out std_logic;
     dsp_except_condition       : out std_logic_vector(ACCL_NUM-1 downto 0);
@@ -96,19 +99,28 @@ entity Pipeline is
     jump_instr_lat             : out std_logic;
     branch_instr               : out std_logic;
     branch_instr_lat           : out std_logic;
-    harc_ID                    : out integer range THREAD_POOL_SIZE-1 downto 0;
-    harc_EXEC                  : out integer range THREAD_POOL_SIZE-1 downto 0;
-    harc_to_csr                : out integer range THREAD_POOL_SIZE-1 downto 0;
+    harc_FETCH                 : out natural range THREAD_POOL_SIZE-1 downto 0;
+    harc_ID                    : out natural range THREAD_POOL_SIZE-1 downto 0;
+    harc_EXEC                  : out natural range THREAD_POOL_SIZE-1 downto 0;
+    harc_to_csr                : out natural range THREAD_POOL_SIZE-1 downto 0;
     instr_word_IE              : out std_logic_vector(31 downto 0);
-    PC_offset                  : out array_2D(THREAD_POOL_SIZE-1 downto 0)(31 downto 0);
-    dbg_ack_i                  : out std_logic;
+    PC_offset                  : out std_logic_vector(31 downto 0);
+    absolute_address           : out std_logic_vector(31 downto 0);
     ebreak_instr               : out std_logic;
     data_addr_internal         : out std_logic_vector(31 downto 0);
-    absolute_jump              : out std_logic;
+    absolute_jump              : out std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     regfile                    : out array_3d(THREAD_POOL_SIZE-1 downto 0)(RF_SIZE-1 downto 0)(31 downto 0);
-    PC_offset_ID               : out array_2D(THREAD_POOL_SIZE-1 downto 0)(31 downto 0);
+    PC_offset_ID               : out std_logic_vector(31 downto 0);
     set_branch_condition_ID    : out std_logic;
+    branch_FETCH               : out std_logic;
+    jump_FETCH                 : out std_logic;
+    jalr_FETCH                 : out std_logic;
+    branch_addr_FETCH          : out std_logic_vector(31 downto 0);
+    jump_addr_FETCH            : out std_logic_vector(31 downto 0);
+    jalr_addr_FETCH            : out std_logic_vector(31 downto 0);
+    harc_sleep_wire            : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     harc_sleep                 : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
+    halt_update                : out std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
 
     -- clock, reset active low, test enable
     clk_i                      : in  std_logic;
@@ -139,9 +151,14 @@ entity Pipeline is
 
 architecture Pipe of Pipeline is
 
-  subtype harc_range is integer range THREAD_POOL_SIZE - 1 downto 0;
+  subtype harc_range is natural range THREAD_POOL_SIZE - 1 downto 0;
   subtype accl_range is integer range ACCL_NUM - 1 downto 0; 
   subtype fu_range   is integer range FU_NUM - 1 downto 0;
+
+  signal rs1_valid_ID           : std_logic;
+  signal rs2_valid_ID           : std_logic;
+  signal rd_valid_ID            : std_logic;
+  signal rd_read_valid_ID       : std_logic;
 
   signal state_IE               : fsm_IE_states;
   signal state_LS               : fsm_LS_states;
@@ -152,8 +169,10 @@ architecture Pipe of Pipeline is
   signal data_dependency        : std_logic;
   signal data_dependency_rs1    : std_logic;
   signal data_dependency_rs2    : std_logic;
+  signal data_dependency_rd     : std_logic;
   signal jalr_stall             : std_logic;
   signal branch_stall           : std_logic;
+  signal sys_instr              : std_logic_vector(harc_range);
 
   signal sleep_state            : std_logic;
   signal ls_sci_wr_gnt          : std_logic;
@@ -161,7 +180,6 @@ architecture Pipe of Pipeline is
   signal ls_data_gnt_i          : std_logic_vector(SPM_NUM-1 downto 0);
   signal dsp_data_gnt_i         : std_logic_vector(accl_range);
   signal ls_instr_done          : std_logic;
-  signal csr_wdata_en           : std_logic;
   signal ie_to_csr              : std_logic_vector(31 downto 0);
   signal ie_csr_wdata_i         : std_logic_vector(31 downto 0);
   signal ie_instr_req           : std_logic;
@@ -170,19 +188,26 @@ architecture Pipe of Pipeline is
   signal busy_LS                : std_logic;
   signal busy_DSP               : std_logic_vector(accl_range);
   signal LS_WB_EN               : std_logic;
+  signal LS_WB_EN_wire          : std_logic;
   signal LS_WB                  : std_logic_vector(31 downto 0);
   signal data_addr_internal_IE  : std_logic_vector(31 downto 0);
   signal data_be_ID             : std_logic_vector(3 downto 0);
   signal data_width_ID          : std_logic_vector(1 downto 0);
   signal IE_WB_EN               : std_logic;
+  signal IE_WB_EN_wire          : std_logic;
   signal IE_WB                  : std_logic_vector(31 downto 0);
   signal MUL_WB_EN              : std_logic;
+  signal MUL_WB_EN_wire         : std_logic;
   signal MUL_WB                 : std_logic_vector(31 downto 0);
 
   signal comparator_en : std_logic;
 
+  signal flush_decode  : std_logic_vector(harc_range);
+  signal jalr_flush    : std_logic_vector(harc_range);
+
   signal halt_IE       : std_logic;
   signal halt_LSU      : std_logic;
+  signal WB_EN_next_ID : std_logic;
 
   signal kmemld_inflight      : std_logic_vector(SPM_NUM-1 downto 0);
   signal kmemstr_inflight     : std_logic_vector(SPM_NUM-1 downto 0);
@@ -194,26 +219,33 @@ architecture Pipe of Pipeline is
   signal pc_WB     : std_logic_vector(31 downto 0);  -- pc_WB is pc entering stage WB
 
   -- instruction register and instr. propagation registers --
-  signal instr_word_ID_lat       : std_logic_vector(31 downto 0);  -- latch needed for long-latency program memory
+  signal instr_word_FETCH        : std_logic_vector(31 downto 0);
+  signal instr_word_ID           : std_logic_vector(31 downto 0);  -- latch needed for long-latency program memory
   signal instr_rvalid_ID         : std_logic;  -- validity bit at ID input
   signal instr_word_LS_WB        : std_logic_vector(31 downto 0);
   signal instr_word_IE_WB        : std_logic_vector(31 downto 0);
+  signal decoded_branching_instr : std_logic_vector(BRANCHING_INSTR_SET_SIZE-1 downto 0);
   signal decoded_instruction_DSP : std_logic_vector(DSP_UNIT_INSTR_SET_SIZE-1 downto 0);
   signal decoded_instruction_IE  : std_logic_vector(EXEC_UNIT_INSTR_SET_SIZE-1 downto 0);
   signal decoded_instruction_LS  : std_logic_vector(LS_UNIT_INSTR_SET_SIZE-1 downto 0);
 
-  signal amo_load_skip : std_logic;
-  signal amo_load      : std_logic;
-  signal amo_store     : std_logic;
-  signal load_op       : std_logic;
-  signal store_op      : std_logic;
-  --signal sw_mip        : std_logic;
-  signal signed_op     : std_logic;
+  signal zero_rd                : std_logic;
+  signal amo_load_skip          : std_logic;
+  signal amo_load               : std_logic;
+  signal amo_store              : std_logic;
+  signal load_op                : std_logic;
+  signal store_op               : std_logic;
+  --signal sw_mip                 : std_logic;
+  signal signed_op              : std_logic;
 
   -- hardware context id at fetch, and propagated hardware context ids
-  signal harc_LS_wire     : accl_range;
-  signal harc_LS_WB       :  integer range THREAD_POOL_SIZE-1 downto 0;
-  signal harc_IE_WB       :  integer range THREAD_POOL_SIZE-1 downto 0;
+  signal harc_LS_wire           : accl_range;
+  signal harc_LS_WB             : natural range THREAD_POOL_SIZE-1 downto 0;
+  signal harc_IE_WB             : natural range THREAD_POOL_SIZE-1 downto 0;
+  signal harc_WB                : natural range THREAD_POOL_SIZE-1 downto 0;
+
+  signal hart_sleep_count_FETCH : std_logic_vector(TPS_CEIL-1 downto 0);
+  signal hart_sleep_count_ID    : std_logic_vector(TPS_CEIL-1 downto 0);
 
   -- DSP Unit Signals
   signal ls_sc_data_write_wire  : std_logic_vector(Data_Width-1 downto 0);
@@ -247,10 +279,13 @@ architecture Pipe of Pipeline is
   signal RS1_Data_IE        : std_logic_vector(31 downto 0);
   signal RS2_Data_IE        : std_logic_vector(31 downto 0);
   signal RD_Data_IE         : std_logic_vector(31 downto 0);  -- unused
+  signal return_address     : array_2d(THREAD_POOL_SIZE-1 downto 0)(31 downto 0);
 
   signal ls_parallel_exec   : std_logic;
   signal dsp_parallel_exec  : std_logic;
-  signal dsp_to_jump        : std_logic;
+  
+  signal dsp_to_jump_wire   : std_logic;
+  signal dsp_to_jump        : std_logic_vector(harc_range);
 
   signal instr_rvalid_ID_int : std_logic;
 
@@ -284,13 +319,34 @@ architecture Pipe of Pipeline is
   signal pc_buf_wire                 : array_2d(buf_size-1 downto 0)(31 downto 0);
   signal buf_wr_ptr                  : integer := 0;
   signal buf_wr_ptr_lat              : integer := 0;
+
+  signal zero_rs1                    : std_logic;
+  signal zero_rs2                    : std_logic;
+  signal pass_BEQ                    : std_logic;
+  signal pass_BNE                    : std_logic;
+  signal pass_BLT                    : std_logic;
+  signal pass_BLTU                   : std_logic;
+  signal pass_BGE                    : std_logic;
+  signal pass_BGEU                   : std_logic;
+
+  signal IE_flush_hart_ID            : std_logic_vector(harc_range);
+  signal LSU_flush_hart_ID           : std_logic_vector(harc_range);
+  signal flush_hart_ID               : std_logic_vector(harc_range);
+  signal IE_flush_hart_FETCH         : std_logic_vector(harc_range);
+  signal LSU_flush_hart_FETCH        : std_logic_vector(harc_range);
+  signal flush_hart_FETCH            : std_logic_vector(harc_range);
+
+  signal branch_taken                : std_logic;
+  signal branch_predict_taken_ID     : std_logic; 
+  signal branch_predict_taken_IE     : std_logic; 
+
+  signal halt_update_FETCH           : std_logic_vector(harc_range);
+  signal halt_update_IE              : std_logic_vector(harc_range);
+
   signal RAW_wire                    : array_2d_int(buf_size-1 downto 0);
   signal RAW                         : array_2d_int(buf_size-1 downto 0);
   signal tracer_result               : std_logic_vector(31 downto 0);
-
-  signal branch_miss                 : std_logic;
-  signal branch_taken                : std_logic; 
-
+  signal tracer_mul_result           : std_logic_vector(63 downto 0);   
 
   function rs1 (signal instr : in std_logic_vector(31 downto 0)) return integer is
   begin
@@ -309,17 +365,53 @@ architecture Pipe of Pipeline is
 
   component IF_STAGE is
   generic(
-    THREAD_POOL_SIZE           : integer
+    THREAD_POOL_SIZE           : natural;
+    morph_en                   : natural;
+    fetch_stage_en             : natural;
+    branch_predict_en          : natural;
+    btb_en                     : natural;
+    btb_len                    : natural;
+    TPS_CEIL                   : natural;
+    RF_CEIL                    : natural
     );
   port (
     pc_IF                      : in  std_logic_vector(31 downto 0);
     busy_ID                    : in  std_logic;  
     instr_rvalid_i             : in  std_logic;
-    harc_IF                    : in   integer range THREAD_POOL_SIZE-1 downto 0;
-    harc_ID                    : out  integer range THREAD_POOL_SIZE-1 downto 0;
+    harc_sleep_wire            : in  std_logic_vector(harc_range);
+    harc_sleep                 : in  std_logic_vector(harc_range);
+    hart_sleep_count_FETCH     : out std_logic_vector(TPS_CEIL-1 downto 0); -- number of sleeping harts
+    served_irq                 : in  std_logic_vector(harc_range);
+    flush_decode               : in  std_logic_vector(harc_range);
+    harc_IF                    : in  natural range THREAD_POOL_SIZE-1 downto 0;
+    harc_FETCH                 : out natural range THREAD_POOL_SIZE-1 downto 0;
+    harc_ID                    : out natural range THREAD_POOL_SIZE-1 downto 0;
     pc_ID                      : out std_logic_vector(31 downto 0);  -- pc_ID is PC entering ID stage
     instr_rvalid_ID            : out std_logic;
-    instr_word_ID_lat          : out std_logic_vector(31 downto 0);
+    instr_word_ID              : out std_logic_vector(31 downto 0);
+    instr_word_FETCH           : out std_logic_vector(31 downto 0);
+    rs1_valid_ID               : out std_logic;
+    rs2_valid_ID               : out std_logic;
+    rd_valid_ID                : out std_logic;
+    rd_read_valid_ID           : out std_logic;
+    instr_rvalid_IE            : in  std_logic;
+    pc_IE                      : in  std_logic_vector(31 downto 0);
+    return_address             : in  array_2d(THREAD_POOL_SIZE-1 downto 0)(31 downto 0);
+    -- brnahc related signals
+    sys_instr                  : in  std_logic_vector(harc_range);
+    absolute_jump              : in  std_logic_vector(harc_range);
+    branch_instr               : in  std_logic;
+    flush_hart_FETCH           : in  std_logic_vector(harc_range);
+    branch_taken               : in  std_logic;
+    decoded_branching_instr    : out std_logic_vector(BRANCHING_INSTR_SET_SIZE-1 downto 0);
+    branch_predict_taken_ID    : out std_logic;
+    branch_FETCH               : out std_logic;
+    jump_FETCH                 : out std_logic;
+    jalr_FETCH                 : out std_logic;
+    halt_update_FETCH          : out std_logic_vector(harc_range);
+    branch_addr_FETCH          : out std_logic_vector(31 downto 0);
+    jump_addr_FETCH            : out std_logic_vector(31 downto 0);
+    jalr_addr_FETCH            : out std_logic_vector(31 downto 0);
     -- clock, reset active low
     clk_i                      : in  std_logic;
     rst_ni                     : in  std_logic;
@@ -332,9 +424,12 @@ architecture Pipe of Pipeline is
 
   component ID_STAGE is
   generic(
-    THREAD_POOL_SIZE           : integer;
+    THREAD_POOL_SIZE           : natural;
     RV32M                      : natural;
+    morph_en                   : natural;
+    fetch_stage_en             : natural;
     branch_predict_en          : natural;
+    btb_en                     : natural;
     superscalar_exec_en        : natural;
     accl_en                    : natural;
     replicate_accl_en          : natural;
@@ -342,6 +437,7 @@ architecture Pipe of Pipeline is
     Addr_Width                 : natural;
     SPM_STRT_ADDR              : std_logic_vector(31 downto 0);
     ACCL_NUM                   : natural;
+    TPS_CEIL                   : natural;
     RF_CEIL                    : natural;
     RF_SIZE                    : natural;
     SPM_ADDR_WID               : natural
@@ -352,6 +448,7 @@ architecture Pipe of Pipeline is
     ls_instr_req               : out std_logic;
     ie_instr_req               : out std_logic;
     dsp_instr_req              : out std_logic_vector(ACCL_NUM-1 downto 0);
+    decoded_branching_instr    : in  std_logic_vector(BRANCHING_INSTR_SET_SIZE-1 downto 0);
     decoded_instruction_IE     : out std_logic_vector(EXEC_UNIT_INSTR_SET_SIZE-1 downto 0);
     decoded_instruction_LS     : out std_logic_vector(LS_UNIT_INSTR_SET_SIZE-1 downto 0);
     decoded_instruction_DSP    : out std_logic_vector(DSP_UNIT_INSTR_SET_SIZE-1 downto 0);
@@ -363,11 +460,18 @@ architecture Pipe of Pipeline is
     load_op                    : out std_logic;
     store_op                   : out std_logic;
     instr_word_IE              : out std_logic_vector(31 downto 0);
-    harc_ID                    : in  integer range THREAD_POOL_SIZE-1 downto 0;
+    MSTATUS                    : in  array_2D(THREAD_POOL_SIZE-1 downto 0)(1 downto 0);
+    harc_FETCH                 : in  natural range THREAD_POOL_SIZE-1 downto 0;
+    harc_ID                    : in  natural range THREAD_POOL_SIZE-1 downto 0;
     pc_ID                      : in  std_logic_vector(31 downto 0);  -- pc_ID is PC entering ID stage
+    rs1_valid_ID               : in  std_logic;
+    rs2_valid_ID               : in  std_logic;
+    rd_valid_ID                : in  std_logic;
+    rd_read_valid_ID           : in  std_logic;
     data_dependency            : out std_logic;
     data_dependency_rs1        : out std_logic;
     data_dependency_rs2        : out std_logic;
+    data_dependency_rd         : out std_logic;
     jalr_stall                 : out std_logic;
     branch_stall               : out std_logic;
     core_busy_IE               : in  std_logic;
@@ -377,35 +481,53 @@ architecture Pipe of Pipeline is
     busy_ID                    : out std_logic;
     ls_parallel_exec           : out std_logic;
     dsp_parallel_exec          : out std_logic;
-    dsp_to_jump                : out std_logic;
+    dsp_to_jump_wire           : out std_logic;
+    dsp_to_jump                : out std_logic_vector(harc_range);
     pc_IE                      : out std_logic_vector(31 downto 0);  -- pc_IE is pc entering stage IE ***
+    WB_EN_next_ID              : out std_logic;
     instr_rvalid_ID            : in  std_logic; 
     instr_rvalid_IE            : out std_logic;  -- validity bit at IE input
     instr_rvalid_ID_int        : out std_logic;
     halt_IE                    : out std_logic;
     halt_LSU                   : out std_logic;
-    instr_word_ID_lat          : in  std_logic_vector(31 downto 0);
+    instr_word_ID              : in  std_logic_vector(31 downto 0);
+    instr_word_FETCH           : in  std_logic_vector(31 downto 0);
     branch_instr               : in  std_logic;
-    absolute_jump              : in  std_logic;
+    absolute_jump              : in  std_logic_vector(harc_range);
+    harc_LS_WB                 : in  natural range THREAD_POOL_SIZE-1 downto 0;
+    harc_IE_WB                 : in  natural range THREAD_POOL_SIZE-1 downto 0;
     LS_WB_EN                   : in  std_logic;
     IE_WB_EN                   : in  std_logic;
     MUL_WB_EN                  : in  std_logic;
+    LS_WB_EN_wire              : in  std_logic;
+    IE_WB_EN_wire              : in  std_logic;
+    MUL_WB_EN_wire             : in  std_logic;
     instr_word_LS_WB           : in  std_logic_vector(31 downto 0);
     instr_word_IE_WB           : in  std_logic_vector(31 downto 0);
     spm_rs1                    : out std_logic;
     spm_rs2                    : out std_logic;
+    harc_sleep_wire            : in  std_logic_vector(harc_range);
     harc_sleep                 : in  std_logic_vector(harc_range);
+    hart_sleep_count_FETCH     : in  std_logic_vector(TPS_CEIL-1 downto 0);
+    hart_sleep_count_ID        : out std_logic_vector(TPS_CEIL-1 downto 0);
+    set_except_condition       : in  std_logic;
+    served_irq                 : in  std_logic_vector(harc_range);
+    flush_decode               : out std_logic_vector(harc_range);
+    jalr_flush                 : out std_logic_vector(harc_range);
     --sw_mip                     : out std_logic;
     signed_op                  : out std_logic;
-    harc_EXEC                  : out integer range THREAD_POOL_SIZE-1 downto 0;
+    harc_EXEC                  : out natural range THREAD_POOL_SIZE-1 downto 0;
+    harc_WB                    : in  natural range THREAD_POOL_SIZE-1 downto 0;
     vec_read_rs1_ID            : out std_logic;
     vec_read_rs2_ID            : out std_logic;
     vec_write_rd_ID            : out std_logic;
     vec_width_ID               : out std_logic_vector(1 downto 0);
-    PC_offset_ID               : out array_2D(harc_range)(31 downto 0);
+    PC_offset_ID               : out std_logic_vector(31 downto 0);
     set_branch_condition_ID    : out std_logic;
-    branch_miss                : in  std_logic;
-    branch_taken               : out std_logic; 
+    zero_rd                    : out std_logic;
+    flush_hart_ID              : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
+    branch_predict_taken_ID    : in  std_logic; 
+    branch_predict_taken_IE    : out std_logic; 
 
     -- clock, reset active low
     clk_i                      : in  std_logic;
@@ -415,7 +537,8 @@ architecture Pipe of Pipeline is
 
   component Load_Store_Unit is
   generic(
-    THREAD_POOL_SIZE           : integer;
+    THREAD_POOL_SIZE           : natural;
+    fetch_stage_en             : natural;
     accl_en                    : natural;
     replicate_accl_en          : natural;
     SIMD                       : natural;
@@ -440,7 +563,7 @@ architecture Pipe of Pipeline is
     decoded_instruction_LS     : in  std_logic_vector(LS_UNIT_INSTR_SET_SIZE-1 downto 0);
     data_be_ID                 : in  std_logic_vector(3 downto 0);
     data_width_ID              : in  std_logic_vector(1 downto 0);
-    harc_EXEC                  : in   integer range THREAD_POOL_SIZE-1 downto 0;
+    harc_EXEC                  : in  natural range THREAD_POOL_SIZE-1 downto 0;
     LS_instr_req               : in  std_logic;
     load_op                    : in  std_logic;
     store_op                   : in  std_logic;
@@ -456,6 +579,8 @@ architecture Pipe of Pipeline is
     ls_except_data             : out std_logic_vector(31 downto 0);
     ls_except_condition        : out std_logic;
     ls_taken_branch            : out std_logic;
+    LSU_flush_hart_FETCH       : out std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
+    LSU_flush_hart_ID          : out std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     amo_load                   : in  std_logic;
     amo_load_skip              : in  std_logic;
     amo_store                  : out std_logic;
@@ -478,6 +603,7 @@ architecture Pipe of Pipeline is
     ls_sc_data_write_wire      : out std_logic_vector(Data_Width-1 downto 0);
     -- WB_Stage Signals
     LS_WB_EN                   : out std_logic;
+    LS_WB_EN_wire              : out std_logic;
     harc_LS_WB                 : out harc_range;
     instr_word_LS_WB           : out std_logic_vector(31 downto 0);
     LS_WB                      : out std_logic_vector(31 downto 0);
@@ -496,78 +622,99 @@ architecture Pipe of Pipeline is
 
   component IE_STAGE is
   generic(
-    THREAD_POOL_SIZE       : integer;
-    branch_predict_en      : natural;
-    RV32M                  : natural;
-    RF_CEIL                : natural
+    THREAD_POOL_SIZE          : natural;
+    morph_en                  : natural;
+    fetch_stage_en            : natural; 
+    branch_predict_en         : natural;
+    RV32M                     : natural;
+    TPS_CEIL                  : natural;
+    RF_CEIL                   : natural
   );
   port (
      -- clock, and reset active low
-    clk_i, rst_ni          : in std_logic;
-    irq_i                  : in std_logic;
-    RS1_Data_IE            : in std_logic_vector(31 downto 0);
-    RS2_Data_IE            : in std_logic_vector(31 downto 0);
-    irq_pending            : in std_logic_vector(harc_range);
-    fetch_enable_i         : in std_logic;
-    csr_instr_done         : in std_logic;
-    csr_access_denied_o    : in std_logic;
-    csr_rdata_o            : in std_logic_vector(31 downto 0);
-    pc_IE                  : in std_logic_vector(31 downto 0);
-    instr_word_IE          : in std_logic_vector(31 downto 0);
-    data_addr_internal_IE  : in std_logic_vector(31 downto 0);
-    comparator_en          : in std_logic;
+    clk_i, rst_ni             : in  std_logic;
+    instr_gnt_i               : in  std_logic;
+    irq_i                     : in  std_logic;
+    RS1_Data_IE               : in  std_logic_vector(31 downto 0);
+    RS2_Data_IE               : in  std_logic_vector(31 downto 0);
+    irq_pending               : in  std_logic_vector(harc_range);
+    fetch_enable_i            : in  std_logic;
+    csr_instr_done            : in  std_logic;
+    csr_access_denied_o       : in  std_logic;
+    csr_rdata_o               : in  std_logic_vector(31 downto 0);
+    pc_IE                     : in  std_logic_vector(31 downto 0);
+    instr_word_IE             : in  std_logic_vector(31 downto 0);
+    data_addr_internal_IE     : in  std_logic_vector(31 downto 0);
+    comparator_en             : in  std_logic;
     --sw_mip                 : in std_logic;
-    signed_op              : in std_logic;
-    ie_instr_req           : in std_logic;
-    dbg_req_o              : in std_logic;
-    MSTATUS                : in array_2d(harc_range)(1 downto 0);
-    harc_EXEC              : in  integer range THREAD_POOL_SIZE-1 downto 0;
-    instr_rvalid_IE        : in  std_logic;  -- validity bit at IE input
-    taken_branch           : in  std_logic;
-    halt_IE                : in  std_logic;
-    decoded_instruction_IE : in  std_logic_vector(EXEC_UNIT_INSTR_SET_SIZE-1 downto 0);
-    harc_sleep             : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
-    csr_addr_i             : out std_logic_vector(11 downto 0);
-    ie_except_data         : out std_logic_vector(31 downto 0);
-    ie_csr_wdata_i         : out std_logic_vector(31 downto 0);
-    csr_op_i               : out std_logic_vector(2 downto 0);
-    csr_wdata_en           : out std_logic;
-    harc_to_csr            : out integer range THREAD_POOL_SIZE-1 downto 0;
-    csr_instr_req          : out std_logic;
-    core_busy_IE           : out std_logic;
-    jump_instr             : out std_logic;
-    jump_instr_lat         : out std_logic;
-    WFI_Instr              : out std_logic;
-    sleep_state            : out std_logic;
-    reset_state            : out std_logic;
-    set_branch_condition   : out std_logic;
-    IE_except_condition    : out std_logic;
-    set_mret_condition     : out std_logic;
-    set_wfi_condition      : out std_logic;
-    ie_taken_branch        : out std_logic;
-    branch_instr           : out std_logic;
-    branch_instr_lat       : out std_logic;
-    PC_offset              : out array_2D(harc_range)(31 downto 0);
-    served_irq             : out std_logic_vector(harc_range);
-    dbg_ack_i              : out std_logic;
-    ebreak_instr           : out std_logic;
-    absolute_jump          : out std_logic;
-    instr_word_IE_WB       : out std_logic_vector (31 downto 0);
-    IE_WB_EN               : out std_logic;
-    IE_WB                  : out std_logic_vector(31 downto 0);
-    MUL_WB_EN              : out std_logic;
-    MUL_WB                 : out std_logic_vector(31 downto 0);
-    harc_IE_WB             : out  integer range THREAD_POOL_SIZE-1 downto 0;
-    pc_WB                  : out std_logic_vector(31 downto 0);
-    state_IE               : out fsm_IE_states;
-    branch_miss            : out std_logic;
-    branch_taken           : in std_logic 
+    zero_rd                   : in  std_logic;
+    signed_op                 : in  std_logic;
+    zero_rs1                  : in  std_logic;
+    zero_rs2                  : in  std_logic;
+    pass_BEQ                  : in  std_logic;
+    pass_BNE                  : in  std_logic;
+    pass_BLT                  : in  std_logic;
+    pass_BLTU                 : in  std_logic;
+    pass_BGE                  : in  std_logic;
+    pass_BGEU                 : in  std_logic;
+    ie_instr_req              : in  std_logic;
+    MSTATUS                   : in  array_2d(harc_range)(1 downto 0);
+    harc_EXEC                 : in  natural range THREAD_POOL_SIZE-1 downto 0;
+    instr_rvalid_IE           : in  std_logic;  -- validity bit at IE input
+    WB_EN_next_ID             : in  std_logic;
+    taken_branch              : in  std_logic;
+    halt_IE                   : in  std_logic;
+    decoded_instruction_IE    : in  std_logic_vector(EXEC_UNIT_INSTR_SET_SIZE-1 downto 0);
+    harc_sleep_wire           : in  std_logic_vector(harc_range);
+    harc_sleep                : in  std_logic_vector(harc_range);
+    hart_sleep_count_ID       : in  std_logic_vector(TPS_CEIL-1 downto 0);
+    csr_addr_i                : out std_logic_vector(11 downto 0);
+    ie_except_data            : out std_logic_vector(31 downto 0);
+    ie_csr_wdata_i            : out std_logic_vector(31 downto 0);
+    csr_op_i                  : out std_logic_vector(2 downto 0);
+    harc_to_csr               : out natural range THREAD_POOL_SIZE-1 downto 0;
+    csr_instr_req             : out std_logic;
+    core_busy_IE              : out std_logic;
+    jump_instr                : out std_logic;
+    jump_instr_lat            : out std_logic;
+    WFI_Instr                 : out std_logic;
+    sleep_state               : out std_logic;
+    set_branch_condition      : out std_logic;
+    IE_except_condition       : out std_logic;
+    set_mret_condition        : out std_logic;
+    set_wfi_condition         : out std_logic;
+    ie_taken_branch           : out std_logic;
+    branch_instr              : out std_logic;
+    branch_instr_lat          : out std_logic;
+    PC_offset                 : out std_logic_vector(31 downto 0);
+    absolute_address          : out std_logic_vector(31 downto 0);
+    served_irq                : out std_logic_vector(harc_range);
+    ebreak_instr              : out std_logic;
+    sys_instr                 : out std_logic_vector(harc_range);
+    absolute_jump             : out std_logic_vector(harc_range);
+    instr_word_IE_WB          : out std_logic_vector (31 downto 0);
+    IE_WB_EN                  : out std_logic;
+    IE_WB_EN_wire             : out std_logic;
+    IE_WB                     : out std_logic_vector(31 downto 0);
+    MUL_WB_EN                 : out std_logic;
+    MUL_WB_EN_wire            : out std_logic;
+    MUL_WB                    : out std_logic_vector(31 downto 0);
+    harc_IE_WB                : out natural range THREAD_POOL_SIZE-1 downto 0;
+    pc_WB                     : out std_logic_vector(31 downto 0);
+    state_IE                  : out fsm_IE_states;
+    dsp_to_jump               : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
+    jalr_flush                : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
+    IE_flush_hart_FETCH       : out std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
+    IE_flush_hart_ID          : out std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
+    halt_update_IE            : out std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
+    branch_taken              : out std_logic;
+    branch_predict_taken_IE   : in  std_logic
   );
   end component;  ------------------------------------------
 
   component DSP_Unit is
   generic(
-    THREAD_POOL_SIZE      : integer;
+    THREAD_POOL_SIZE      : natural;
     accl_en               : natural;
     replicate_accl_en     : natural;
     multithreaded_accl_en : natural;
@@ -601,7 +748,7 @@ architecture Pipe of Pipeline is
     dsp_except_condition       : out std_logic_vector(accl_range);
       -- ID_Stage Signals
     decoded_instruction_DSP    : in  std_logic_vector(DSP_UNIT_INSTR_SET_SIZE-1 downto 0);
-    harc_EXEC                  : in   integer range THREAD_POOL_SIZE-1 downto 0;
+    harc_EXEC                  : in  natural range THREAD_POOL_SIZE-1 downto 0;
     pc_IE                      : in  std_logic_vector(31 downto 0);
     RS1_Data_IE                : in  std_logic_vector(31 downto 0);
     RS2_Data_IE                : in  std_logic_vector(31 downto 0);
@@ -673,10 +820,12 @@ architecture Pipe of Pipeline is
 
   component REGISTERFILE is
   generic(
-    THREAD_POOL_SIZE           : integer;
+    THREAD_POOL_SIZE           : natural;
     LUTRAM_RF                  : natural;
+    morph_en                   : natural;
+    fetch_stage_en             : natural;
     accl_en                    : natural;
-    SPM_NUM                    : natural;  
+    SPM_NUM                    : natural;
     Addr_Width                 : natural;
     SPM_STRT_ADDR              : std_logic_vector(31 downto 0);
     RF_SIZE                    : natural;
@@ -688,39 +837,49 @@ architecture Pipe of Pipeline is
     clk_i                      : in  std_logic;
     rst_ni                     : in  std_logic;
     -- Branch Control Signals
-    harc_ID                    : in  integer range THREAD_POOL_SIZE-1 downto 0;
+    harc_ID                    : in  natural range THREAD_POOL_SIZE-1 downto 0;
     pc_ID                      : in  std_logic_vector(31 downto 0);  -- pc_ID is PC entering ID stage
-    data_dependency            : in std_logic;
-    data_dependency_rs1        : in std_logic;
-    data_dependency_rs2        : in std_logic;
-    jalr_stall                 : in std_logic;
-    branch_stall               : in std_logic;
+    data_dependency            : in  std_logic;
+    data_dependency_rs1        : in  std_logic;
+    data_dependency_rs2        : in  std_logic;
+    data_dependency_rd         : in  std_logic;
+    jalr_stall                 : in  std_logic;
+    branch_stall               : in  std_logic;
     core_busy_IE               : in  std_logic;
     core_busy_LS               : in  std_logic;
     ls_parallel_exec           : in  std_logic;
     dsp_parallel_exec          : in  std_logic;
-    dsp_to_jump                : in  std_logic;
+    dsp_to_jump_wire           : in  std_logic;
     instr_rvalid_ID            : in  std_logic;
     instr_rvalid_ID_int        : in  std_logic;
-    instr_word_ID_lat          : in  std_logic_vector(31 downto 0);
-    LS_WB_EN                   : in std_logic;
-    IE_WB_EN                   : in std_logic;
-    MUL_WB_EN                  : in std_logic;
-    IE_WB                      : in std_logic_vector(31 downto 0);
-    MUL_WB                     : in std_logic_vector(31 downto 0);
-    LS_WB                      : in std_logic_vector(31 downto 0);
-    instr_word_LS_WB           : in std_logic_vector(31 downto 0);
-    instr_word_IE_WB           : in std_logic_vector(31 downto 0);
-    harc_LS_WB                 : in integer range THREAD_POOL_SIZE-1 downto 0;
-    harc_IE_WB                 : in integer range THREAD_POOL_SIZE-1 downto 0;
+    instr_word_ID              : in  std_logic_vector(31 downto 0);
+    LS_WB_EN                   : in  std_logic;
+    IE_WB_EN                   : in  std_logic;
+    MUL_WB_EN                  : in  std_logic;
+    IE_WB                      : in  std_logic_vector(31 downto 0);
+    MUL_WB                     : in  std_logic_vector(31 downto 0);
+    LS_WB                      : in  std_logic_vector(31 downto 0);
+    instr_word_LS_WB           : in  std_logic_vector(31 downto 0);
+    instr_word_IE_WB           : in  std_logic_vector(31 downto 0);
+    harc_LS_WB                 : in  natural range THREAD_POOL_SIZE-1 downto 0;
+    harc_IE_WB                 : in  natural range THREAD_POOL_SIZE-1 downto 0;
+    zero_rs1                   : out std_logic;
+    zero_rs2                   : out std_logic;
+    pass_BEQ                   : out std_logic;
+    pass_BNE                   : out std_logic;
+    pass_BLT                   : out std_logic;
+    pass_BLTU                  : out std_logic;
+    pass_BGE                   : out std_logic;
+    pass_BGEU                  : out std_logic;
     RS1_Data_IE                : out std_logic_vector(31 downto 0);
     RS2_Data_IE                : out std_logic_vector(31 downto 0);
     RD_Data_IE                 : out std_logic_vector(31 downto 0);
+    return_address             : out array_2d(THREAD_POOL_SIZE-1 downto 0)(31 downto 0);
     rs1_to_sc                  : out std_logic_vector(SPM_ADDR_WID-1 downto 0);
     rs2_to_sc                  : out std_logic_vector(SPM_ADDR_WID-1 downto 0);
     rd_to_sc                   : out std_logic_vector(SPM_ADDR_WID-1 downto 0);
     data_addr_internal_IE      : out std_logic_vector(31 downto 0);
-    regfile                    : out array_3d(THREAD_POOL_SIZE-1 downto 0)(RF_SIZE-1 downto 0)(31 downto 0)
+    regfile                    : out array_3d(harc_range)(RF_SIZE-1 downto 0)(31 downto 0)
   );
   end component;
 
@@ -735,11 +894,16 @@ begin
     report "Threading configuration not supported"
   severity error;
 
-    
+  set_except_condition <= '1' when (IE_except_condition = '1' or LS_except_condition = '1' or DSP_except_condition /= (accl_range => '0')) else '0';
+
+  flush_hart_ID    <= IE_flush_hart_ID    or LSU_flush_hart_ID;
+  flush_hart_FETCH <= IE_flush_hart_FETCH or LSU_flush_hart_FETCH;
+
   taken_branch <= '1' when (ie_taken_branch = '1' or ls_taken_branch = '1' or unsigned(dsp_taken_branch) /= 0) else '0';
           
   csr_wdata_i <= ie_csr_wdata_i;
 
+  harc_WB <= harc_LS_WB when LS_WB_EN = '1' else harc_IE_WB;
 ------------------------------------------------------------------------------------------------------------------------------------
 -- Core_busy_o
 ------------------------------------------------------------------------------------------------------------------------------------
@@ -747,10 +911,13 @@ begin
   core_busy_o <= '1' when (instr_rvalid_i or instr_rvalid_ID or instr_rvalid_IE) = '1' and rst_ni = '1' else '0';
 ------------------------------------------------------------------------------------------------------------------------------------
 
+
   dsp_except_off : if accl_en = 0 generate
     dsp_except_condition <= (others => '0');
     dsp_taken_branch     <= (others => '0');
   end generate;
+
+  halt_update <= halt_update_FETCH or halt_update_IE;
 
 ------------------------------------------------------------------------------------------------------------------------------------
 -- Mapping of the pipeline stages
@@ -768,19 +935,54 @@ begin
 
   FETCH : IF_STAGE
   generic map(
-    THREAD_POOL_SIZE           => THREAD_POOL_SIZE
+    THREAD_POOL_SIZE           => THREAD_POOL_SIZE,
+    morph_en                   => morph_en,
+    fetch_stage_en             => fetch_stage_en,
+    branch_predict_en          => branch_predict_en,
+    btb_en                     => btb_en,
+    btb_len                    => btb_len,
+    TPS_CEIL                   => TPS_CEIL,
+    RF_CEIL                    => RF_CEIL
     )
   port map(
-    pc_IF                      => pc_IF,         
-    harc_IF                    => harc_IF,          
-    busy_ID                    => busy_ID,          
-    instr_rvalid_i             => instr_rvalid_i,  
-    harc_ID                    => harc_ID,  
-    pc_ID                      => pc_ID,        
-    instr_rvalid_ID            => instr_rvalid_ID,  
-    instr_word_ID_lat          => instr_word_ID_lat,  
-    clk_i                      => clk_i,            
-    rst_ni                     => rst_ni,           
+    pc_IF                      => pc_IF,
+    harc_IF                    => harc_IF,
+    busy_ID                    => busy_ID,   
+    instr_rvalid_i             => instr_rvalid_i,
+    harc_sleep_wire            => harc_sleep_wire,
+    harc_sleep                 => harc_sleep,
+    hart_sleep_count_FETCH     => hart_sleep_count_FETCH,
+    served_irq                 => served_irq,
+    flush_decode               => flush_decode,
+    harc_FETCH                 => harc_FETCH,
+    harc_ID                    => harc_ID,
+    pc_ID                      => pc_ID,
+    instr_rvalid_ID            => instr_rvalid_ID,
+    instr_word_ID              => instr_word_ID,
+    instr_word_FETCH           => instr_word_FETCH,
+    rs1_valid_ID               => rs1_valid_ID, 
+    rs2_valid_ID               => rs2_valid_ID, 
+    rd_valid_ID                => rd_valid_ID, 
+    rd_read_valid_ID           => rd_read_valid_ID,
+    instr_rvalid_IE            => instr_rvalid_IE,
+    pc_IE                      => pc_IE,
+    return_address             => return_address,
+    sys_instr                  => sys_instr,
+    absolute_jump              => absolute_jump, 
+    branch_instr               => branch_instr, 
+    flush_hart_FETCH           => flush_hart_FETCH, 
+    branch_taken               => branch_taken,
+    decoded_branching_instr    => decoded_branching_instr,
+    branch_predict_taken_ID    => branch_predict_taken_ID,
+    branch_FETCH               => branch_FETCH,
+    jump_FETCH                 => jump_FETCH,
+    jalr_FETCH                 => jalr_FETCH,
+    halt_update_FETCH          => halt_update_FETCH,
+    branch_addr_FETCH          => branch_addr_FETCH,
+    jump_addr_FETCH            => jump_addr_FETCH,
+    jalr_addr_FETCH            => jalr_addr_FETCH,
+    clk_i                      => clk_i,
+    rst_ni                     => rst_ni,
     instr_req_o                => instr_req_o,      
     instr_gnt_i                => instr_gnt_i,
     instr_rdata_i              => instr_rdata_i
@@ -790,7 +992,10 @@ begin
   generic map(
     THREAD_POOL_SIZE           => THREAD_POOL_SIZE,
     RV32M                      => RV32M,
+    morph_en                   => morph_en,
+    fetch_stage_en             => fetch_stage_en,
     branch_predict_en          => branch_predict_en,
+    btb_en                     => btb_en,
     superscalar_exec_en        => superscalar_exec_en,
     accl_en                    => accl_en,
     replicate_accl_en          => replicate_accl_en,
@@ -798,6 +1003,7 @@ begin
     Addr_Width                 => Addr_Width,
     SPM_STRT_ADDR              => SPM_STRT_ADDR,
     ACCL_NUM                   => ACCL_NUM,
+    TPS_CEIL                   => TPS_CEIL,
     RF_CEIL                    => RF_CEIL,
     RF_SIZE                    => RF_SIZE,
     SPM_ADDR_WID               => SPM_ADDR_WID
@@ -806,7 +1012,8 @@ begin
     comparator_en              => comparator_en,
     ie_instr_req               => ie_instr_req,        
     ls_instr_req               => ls_instr_req,        
-    dsp_instr_req              => dsp_instr_req,       
+    dsp_instr_req              => dsp_instr_req,
+    decoded_branching_instr    => decoded_branching_instr,
     decoded_instruction_IE     => decoded_instruction_IE, 
     decoded_instruction_LS     => decoded_instruction_LS, 
     decoded_instruction_DSP    => decoded_instruction_DSP,
@@ -818,11 +1025,17 @@ begin
     load_op                    => load_op,
     store_op                   => store_op,      
     instr_word_IE              => instr_word_IE,
+    MSTATUS                    => MSTATUS,
     harc_ID                    => harc_ID,
     pc_ID                      => pc_ID,
+    rs1_valid_ID               => rs1_valid_ID,
+    rs2_valid_ID               => rs2_valid_ID,
+    rd_valid_ID                => rd_valid_ID,
+    rd_read_valid_ID           => rd_read_valid_ID,
     data_dependency            => data_dependency,
     data_dependency_rs1        => data_dependency_rs1,
     data_dependency_rs2        => data_dependency_rs2,        
+    data_dependency_rd         => data_dependency_rd,        
     jalr_stall                 => jalr_stall,
     branch_stall               => branch_stall,
     core_busy_IE               => core_busy_IE,
@@ -832,34 +1045,53 @@ begin
     busy_ID                    => busy_ID,
     ls_parallel_exec           => ls_parallel_exec,
     dsp_parallel_exec          => dsp_parallel_exec,
+    dsp_to_jump_wire           => dsp_to_jump_wire,
     dsp_to_jump                => dsp_to_jump,
     pc_IE                      => pc_IE,
+    WB_EN_next_ID              => WB_EN_next_ID,
     instr_rvalid_ID            => instr_rvalid_ID,
     instr_rvalid_IE            => instr_rvalid_IE,
     instr_rvalid_ID_int        => instr_rvalid_ID_int,
     halt_IE                    => halt_IE,
     halt_LSU                   => halt_LSU,
-    instr_word_ID_lat          => instr_word_ID_lat,
+    instr_word_ID              => instr_word_ID,
+    instr_word_FETCH           => instr_word_FETCH,
+    harc_FETCH                 => harc_FETCH,              
     branch_instr               => branch_instr,
     absolute_jump              => absolute_jump,
+    harc_LS_WB                 => harc_LS_WB,
+    harc_IE_WB                 => harc_IE_WB,
     LS_WB_EN                   => LS_WB_EN,
     IE_WB_EN                   => IE_WB_EN,
     MUL_WB_EN                  => MUL_WB_EN,
+    LS_WB_EN_wire              => LS_WB_EN_wire,
+    IE_WB_EN_wire              => IE_WB_EN_wire,
+    MUL_WB_EN_wire             => MUL_WB_EN_wire,
     instr_word_LS_WB           => instr_word_LS_WB,
     instr_word_IE_WB           => instr_word_IE_WB,
     spm_rs1                    => spm_rs1,
     spm_rs2                    => spm_rs2,
-    branch_miss                => branch_miss,
-    branch_taken               => branch_taken,
+    flush_hart_ID              => flush_hart_ID,
+    branch_predict_taken_ID    => branch_predict_taken_ID,
+    branch_predict_taken_IE    => branch_predict_taken_IE,
+    harc_sleep_wire            => harc_sleep_wire,
     harc_sleep                 => harc_sleep,
+    hart_sleep_count_FETCH     => hart_sleep_count_FETCH,
+    hart_sleep_count_ID        => hart_sleep_count_ID,
+    set_except_condition       => set_except_condition,
+    served_irq                 => served_irq,
+    flush_decode               => flush_decode,
+    jalr_flush                 => jalr_flush,
     --sw_mip                     => sw_mip,
     signed_op                  => signed_op,
     harc_EXEC                  => harc_EXEC,
+    harc_WB                    => harc_WB,
     vec_read_rs1_ID            => vec_read_rs1_ID,
     vec_read_rs2_ID            => vec_read_rs2_ID,
     vec_write_rd_ID            => vec_write_rd_ID,
     PC_offset_ID               => PC_offset_ID,
-    set_branch_condition_ID                  => set_branch_condition_ID,
+    set_branch_condition_ID    => set_branch_condition_ID,
+    zero_rd                    => zero_rd,
     clk_i                      => clk_i,
     rst_ni                     => rst_ni                
   );
@@ -867,6 +1099,7 @@ begin
   LSU : Load_Store_Unit
   generic map(
     THREAD_POOL_SIZE           => THREAD_POOL_SIZE,
+    fetch_stage_en             => fetch_stage_en,
     accl_en                    => accl_en,
     replicate_accl_en          => replicate_accl_en,
     SIMD                       => SIMD,
@@ -904,6 +1137,8 @@ begin
     ls_except_data             => ls_except_data,  
     ls_except_condition        => ls_except_condition,        
     ls_taken_branch            => ls_taken_branch,
+    LSU_flush_hart_FETCH       => LSU_flush_hart_FETCH,
+    LSU_flush_hart_ID          => LSU_flush_hart_ID,
     amo_load                   => amo_load,              
     amo_load_skip              => amo_load_skip,         
     amo_store                  => amo_store,    
@@ -922,7 +1157,8 @@ begin
     ls_sc_read_addr            => ls_sc_read_addr,
     ls_sc_write_addr           => ls_sc_write_addr,
     ls_sc_data_write_wire      => ls_sc_data_write_wire,
-    LS_WB_EN                   => LS_WB_EN,  
+    LS_WB_EN                   => LS_WB_EN,
+    LS_WB_EN_wire              => LS_WB_EN_wire,
     harc_LS_WB                 => harc_LS_WB,
     instr_word_LS_WB           => instr_word_LS_WB,
     LS_WB                      => LS_WB,
@@ -940,13 +1176,17 @@ begin
   EXECUTE : IE_STAGE
   generic map(
     THREAD_POOL_SIZE           => THREAD_POOL_SIZE,
+    morph_en                   => morph_en,
+    fetch_stage_en             => fetch_stage_en,
     branch_predict_en          => branch_predict_en, 
     RV32M                      => RV32M,
+    TPS_CEIL                   => TPS_CEIL,
     RF_CEIL                    => RF_CEIL
   )
   port map(
     clk_i                      => clk_i,
     rst_ni                     => rst_ni,
+    instr_gnt_i                => instr_gnt_i,
     irq_i                      => irq_i,
     RS1_Data_IE                => RS1_Data_IE,
     RS2_Data_IE                => RS2_Data_IE,
@@ -960,21 +1200,31 @@ begin
     data_addr_internal_IE      => data_addr_internal_IE,
     comparator_en              => comparator_en,
     --sw_mip                     => sw_mip,
+    zero_rd                    => zero_rd,
     signed_op                  => signed_op,
+    zero_rs1                   => zero_rs1,
+    zero_rs2                   => zero_rs2,
+    pass_BEQ                   => pass_BEQ,
+    pass_BNE                   => pass_BNE,
+    pass_BLT                   => pass_BLT,
+    pass_BLTU                  => pass_BLTU,
+    pass_BGE                   => pass_BGE,
+    pass_BGEU                  => pass_BGEU,
     ie_instr_req               => ie_instr_req,
-    dbg_req_o                  => dbg_req_o,
     MSTATUS                    => MSTATUS,
     harc_EXEC                  => harc_EXEC,
     instr_rvalid_IE            => instr_rvalid_IE,
+    WB_EN_next_ID              => WB_EN_next_ID,
     taken_branch               => taken_branch,
     halt_IE                    => halt_IE,
     decoded_instruction_IE     => decoded_instruction_IE,
+    harc_sleep_wire            => harc_sleep_wire,
     harc_sleep                 => harc_sleep,
+    hart_sleep_count_ID        => hart_sleep_count_ID,
     csr_addr_i                 => csr_addr_i,
     ie_except_data             => ie_except_data,
     ie_csr_wdata_i             => ie_csr_wdata_i,
     csr_op_i                   => csr_op_i,
-    csr_wdata_en               => csr_wdata_en,
     harc_to_csr                => harc_to_csr,
     csr_instr_req              => csr_instr_req,
     core_busy_IE               => core_busy_IE,
@@ -982,7 +1232,6 @@ begin
     jump_instr_lat             => jump_instr_lat,
     WFI_Instr                  => WFI_Instr,
     sleep_state                => sleep_state,
-    reset_state                => reset_state,
     set_branch_condition       => set_branch_condition,
     IE_except_condition        => IE_except_condition,
     set_mret_condition         => set_mret_condition,
@@ -991,20 +1240,28 @@ begin
     branch_instr               => branch_instr,
     branch_instr_lat           => branch_instr_lat,
     PC_offset                  => PC_offset,
+    absolute_address           => absolute_address,
     served_irq                 => served_irq,
-    dbg_ack_i                  => dbg_ack_i,
     ebreak_instr               => ebreak_instr,
+    sys_instr                  => sys_instr,
     absolute_jump              => absolute_jump,
     instr_word_IE_WB           => instr_word_IE_WB,
     IE_WB_EN                   => IE_WB_EN,
+    IE_WB_EN_wire              => IE_WB_EN_wire,
     IE_WB                      => IE_WB,
     MUL_WB_EN                  => MUL_WB_EN,
+    MUL_WB_EN_wire             => MUL_WB_EN_wire,
     MUL_WB                     => MUL_WB,
     harc_IE_WB                 => harc_IE_WB,
     pc_WB                      => pc_WB,
     state_IE                   => state_IE,
-    branch_miss                => branch_miss,
-    branch_taken               => branch_taken
+    dsp_to_jump                => dsp_to_jump,
+    jalr_flush                 => jalr_flush,
+    IE_flush_hart_FETCH        => IE_flush_hart_FETCH,
+    IE_flush_hart_ID           => IE_flush_hart_ID,
+    halt_update_IE             => halt_update_IE,
+    branch_taken               => branch_taken,
+    branch_predict_taken_IE    => branch_predict_taken_IE
   );
 
   ACCL_generate : if accl_en = 1 generate
@@ -1113,6 +1370,8 @@ begin
   generic map(
     THREAD_POOL_SIZE           => THREAD_POOL_SIZE,
     LUTRAM_RF                  => LUTRAM_RF,
+    morph_en                   => morph_en,
+    fetch_stage_en             => fetch_stage_en,
     accl_en                    => accl_en,
     SPM_NUM                    => SPM_NUM,
     Addr_Width                 => Addr_Width,
@@ -1131,16 +1390,17 @@ begin
     data_dependency            => data_dependency,
     data_dependency_rs1        => data_dependency_rs1,
     data_dependency_rs2        => data_dependency_rs2,        
+    data_dependency_rd         => data_dependency_rd,        
     jalr_stall                 => jalr_stall,
     branch_stall               => branch_stall, 
     core_busy_IE               => core_busy_IE,
     core_busy_LS               => core_busy_LS,
     ls_parallel_exec           => ls_parallel_exec,
     dsp_parallel_exec          => dsp_parallel_exec,
-    dsp_to_jump                => dsp_to_jump,
+    dsp_to_jump_wire           => dsp_to_jump_wire,
     instr_rvalid_ID            => instr_rvalid_ID,
     instr_rvalid_ID_int        => instr_rvalid_ID_int,
-    instr_word_ID_lat          => instr_word_ID_lat,
+    instr_word_ID              => instr_word_ID,
     LS_WB_EN                   => LS_WB_EN,
     IE_WB_EN                   => IE_WB_EN,
     MUL_WB_EN                  => MUL_WB_EN,
@@ -1151,9 +1411,18 @@ begin
     instr_word_IE_WB           => instr_word_IE_WB,
     harc_LS_WB                 => harc_LS_WB,
     harc_IE_WB                 => harc_IE_WB,
+    zero_rs1                   => zero_rs1,
+    zero_rs2                   => zero_rs2,
+    pass_BEQ                   => pass_BEQ,
+    pass_BNE                   => pass_BNE,
+    pass_BLT                   => pass_BLT,
+    pass_BLTU                  => pass_BLTU,
+    pass_BGE                   => pass_BGE,
+    pass_BGEU                  => pass_BGEU,
     RS1_Data_IE                => RS1_Data_IE,
     RS2_Data_IE                => RS2_Data_IE,
     RD_Data_IE                 => RD_Data_IE,
+    return_address             => return_address,
     rs1_to_sc                  => rs1_to_sc,
     rs2_to_sc                  => rs2_to_sc,
     rd_to_sc                   => rd_to_sc,
@@ -1256,14 +1525,16 @@ begin
               write(row0, rd(instr_word_IE));
               write(row0, string'(",x"));
               write(row0, rs1(instr_word_IE));
-              write(row0, string'(","));
-              write(row0, to_integer(signed(I_immediate(instr_word_IE))));
+              write(row0, string'(",0x"));
+              hwrite(row0, I_imm(instr_word_IE));
               write(row0, ht);
               write(row0, ht);
               write(row0, string'("rs1=0x"));
               hwrite(row0, RS1_Data_IE);
-              write(row0, string'("      old_rd=0x"));
-              hwrite(row0, RD_Data_IE);
+              --if accl_en = 1 then
+              --  write(row0, string'("      old_rd=0x"));
+              --  hwrite(row0, RD_Data_IE);
+              --end if;
               write(row0, string'("      new_rd=0x"));
               hwrite(row0, tracer_result);
             end if;
@@ -1272,11 +1543,13 @@ begin
               write(row0, string'("    lui x"));
               write(row0, rd(instr_word_IE));
               write(row0, string'(",0x"));
-              hwrite(row0, instr_word_IE(31 downto 12));
+              hwrite(row0, U_imm(instr_word_IE));
               write(row0, ht);
               write(row0, ht);
-              write(row0, string'("old_rd=0x"));
-              hwrite(row0, RD_Data_IE);
+              --if accl_en = 1 then
+              --  write(row0, string'("old_rd=0x"));
+              --  hwrite(row0, RD_Data_IE);
+              --end if;
               write(row0, string'("      new_rd=0x"));
               hwrite(row0, tracer_result);
             end if;
@@ -1285,11 +1558,13 @@ begin
               write(row0, string'("    auipc x"));
               write(row0, rd(instr_word_IE));
               write(row0, string'(",0x"));
-              hwrite(row0, instr_word_IE(31 downto 12));
+              hwrite(row0, U_imm(instr_word_IE));
               write(row0, ht);
               write(row0, ht);
-              write(row0, string'("old_rd=0x"));
-              hwrite(row0, RD_Data_IE);
+              --if accl_en = 1 then
+              --  write(row0, string'("old_rd=0x"));
+              --  hwrite(row0, RD_Data_IE);
+              --nd if;
               write(row0, string'("      new_rd=0x"));
               hwrite(row0, tracer_result);
             end if;
@@ -1350,8 +1625,10 @@ begin
               hwrite(row0, RS1_Data_IE);
               write(row0, string'("      rs2=0x"));
               hwrite(row0, RS2_Data_IE);
-              write(row0, string'("      old_rd=0x"));
-              hwrite(row0, RD_Data_IE);
+              --if accl_en = 1 then
+              --  write(row0, string'("      old_rd=0x"));
+              --  hwrite(row0, RD_Data_IE);
+              --end if;
               write(row0, string'("      new_rd=0x"));
               hwrite(row0, tracer_result);            end if;
 
@@ -1359,7 +1636,7 @@ begin
               write(row0, string'("    jal x"));
               write(row0, rd(instr_word_IE));
               write(row0, string'(",0x"));
-              hwrite(row0, instr_word_IE(31 downto 12));
+              hwrite(row0, UJ_imm(instr_word_IE));
               write(row0, ht);
               write(row0, ht);
               write(row0, string'("next_pc="));
@@ -1371,8 +1648,8 @@ begin
               write(row0, rd(instr_word_IE));
               write(row0, string'(",x"));
               write(row0, rs1(instr_word_IE));
-              write(row0, ',');
-              write(row0, to_integer(signed(I_immediate(instr_word_IE))));
+              write(row0, string'(",0x"));
+              hwrite(row0, I_imm(instr_word_IE));
               write(row0, ht);
               write(row0, ht);
               write(row0, string'("next_pc="));
@@ -1412,8 +1689,8 @@ begin
               write(row0, rs1(instr_word_IE));
               write(row0, string'(",x"));
               write(row0, rs2(instr_word_IE));
-              write(row0, string'(","));
-              write(row0, to_integer(signed(B_immediate(instr_word_IE))));
+              write(row0, string'(",0x"));
+              hwrite(row0, B_imm(instr_word_IE));
               write(row0, ht);
               write(row0, ht);
               write(row0, string'("rs1=0x"));
@@ -1553,8 +1830,10 @@ begin
                 write(row0, ht);
                 write(row0, string'("rs1=0x"));
                 hwrite(row0, RS1_Data_IE);
-                write(row0, string'("      old_rd=0x"));
-                hwrite(row0, RD_Data_IE);
+                --if accl_en = 1 then
+                --  write(row0, string'("      old_rd=0x"));
+                --  hwrite(row0, RD_Data_IE);
+                --end if;
             end if;
 
             if decoded_instruction_IE(ILL_bit_position) = '1' then
@@ -1616,10 +1895,18 @@ begin
               hwrite(row0, RS1_Data_IE);
               write(row0, string'("      rs2=0x"));
               hwrite(row0, RS2_Data_IE);
-              write(row0, string'("      old_rd=0x"));
-              hwrite(row0, RD_Data_IE);
+              --if accl_en = 1 then
+              --  write(row0, string'("      old_rd=0x"));
+              --  hwrite(row0, RD_Data_IE);
+              --end if;
               write(row0, string'("      new_rd=0x"));
-              hwrite(row0, tracer_result);
+              if decoded_instruction_IE(MUL_bit_position) = '1' then
+                hwrite(row0, tracer_mul_result(31 downto 0));
+              elsif decoded_instruction_IE(MULH_bit_position)   = '1' or
+                    decoded_instruction_IE(MULHU_bit_position)  = '1' or
+                    decoded_instruction_IE(MULHSU_bit_position) = '1' then
+                hwrite(row0, tracer_mul_result(63 downto 32));
+              end if;
             end if;
 
 
@@ -1675,7 +1962,8 @@ begin
                decoded_instruction_LS(LB_bit_position) = '1' or decoded_instruction_LS(LBU_bit_position) = '1' then
               write(row0, rd(instr_word_IE));
               write(row0, string'(","));
-              write(row0, to_integer(signed(I_immediate(instr_word_IE))));
+              write(row0, string'(",0x"));
+              hwrite(row0, I_imm(instr_word_IE));
               write(row0, string'("(x"));
               write(row0, rs1(instr_word_IE));
               write(row0, string'(")"));
@@ -1684,8 +1972,8 @@ begin
               write(row0, ht);
               write(row0, string'("rs1=0x"));
               hwrite(row0, RS1_Data_IE);
-              write(row0, string'("      rd=0x"));
-              hwrite(row0, RD_Data_IE);
+              --write(row0, string'("      rd=0x"));
+              --hwrite(row0, RD_Data_IE);
               write(row0, string'("      addr=0x"));
               hwrite(row0, tracer_result);
             end if;
@@ -1707,7 +1995,8 @@ begin
               decoded_instruction_LS(SB_bit_position) = '1' then
              write(row0, rs2(instr_word_IE));
              write(row0, string'(","));
-             write(row0, to_integer(signed(S_immediate(instr_word_IE))));
+             write(row0, string'(",0x"));
+             hwrite(row0, S_imm(instr_word_IE));
              write(row0, string'("(x"));
              write(row0, rs1(instr_word_IE));
              write(row0, string'(")"));
@@ -1717,7 +2006,7 @@ begin
              write(row0, string'("rs1=0x"));
              hwrite(row0, RS1_Data_IE);
              write(row0, string'("      rs2=0x"));
-             hwrite(row0, RD_Data_IE);
+             hwrite(row0, RS2_Data_IE);
              write(row0, string'("      addr=0x"));
              hwrite(row0, tracer_result);
            end if;
@@ -1832,16 +2121,16 @@ begin
                  decoded_instruction_DSP(KRELU_bit_position)  = '1'  or
                  decoded_instruction_DSP(KBCAST_bit_position) = '1'  or
                  decoded_instruction_DSP(KVCP_bit_position)   = '1'  or
-                 FUNCT7(instr_word_ID_lat) = KBCAST then
-                write(row0, rd(instr_word_ID_lat));
+                 FUNCT7(instr_word_IE) = KBCAST then
+                write(row0, rd(instr_word_IE));
                 write(row0, string'(",x"));
-                write(row0, rs1(instr_word_ID_lat));
+                write(row0, rs1(instr_word_IE));
               else
-                write(row0, rd(instr_word_ID_lat));
+                write(row0, rd(instr_word_IE));
                 write(row0, string'(",x"));
-                write(row0, rs1(instr_word_ID_lat));
+                write(row0, rs1(instr_word_IE));
                 write(row0, string'(",x"));
-                write(row0, rs2(instr_word_ID_lat));
+                write(row0, rs2(instr_word_IE));
               end if;
               write(row0, string'("      SPM_rd("));
               write(row0, to_integer(unsigned(rd_to_sc)));
@@ -1891,6 +2180,7 @@ begin
 
     end if;  -- reset, clk_i
   end process;
+  
   
 
   ----------------------------------------------------------------------------------------------------
@@ -2183,6 +2473,19 @@ begin
             rs1_valid <= '1' when rs1(instr_word_IE) /= 0;
             rs2_valid <= '1' when rs2(instr_word_IE) /= 0;
             rd_valid  <= '1' when rd(instr_word_IE)  /= 0;
+          end if;
+
+          if decoded_instruction_IE(MUL_bit_position) = '1' or 
+             decoded_instruction_IE(MULH_bit_position) = '1' then
+            tracer_mul_result <= std_logic_vector(signed(RS1_Data_IE)*signed(RS2_Data_IE));
+          end if;
+
+          if decoded_instruction_IE(MULHU_bit_position) = '1' then
+            tracer_mul_result <= std_logic_vector(unsigned(RS1_Data_IE)*unsigned(RS2_Data_IE));
+          end if;
+
+          if decoded_instruction_IE(MULHSU_bit_position) = '1' then
+            tracer_mul_result <= x"FFFFFFFF_00000000";
           end if;
 
           if decoded_instruction_IE(DIV_bit_position)  = '1' or 

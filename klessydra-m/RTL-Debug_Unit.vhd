@@ -22,7 +22,7 @@ use work.riscv_klessydra.all;
 
 entity Debug_UNIT is
   generic(
-      THREAD_POOL_SIZE         : integer;
+      THREAD_POOL_SIZE         : natural;
       LUTRAM_RF                : natural;
       ACCL_NUM                 : natural;
       RF_SIZE                  : natural
@@ -37,7 +37,6 @@ entity Debug_UNIT is
       served_irq               : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
       irq_pending              : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
       taken_branch_pc_lat      : in  array_2D(THREAD_POOL_SIZE-1 downto 0)(31 downto 0);
-      incremented_pc           : in  array_2D(THREAD_POOL_SIZE-1 downto 0)(31 downto 0);
       MTVEC                    : in  array_2D(THREAD_POOL_SIZE-1 downto 0)(31 downto 0);
       MIP                      : in  array_2D(THREAD_POOL_SIZE-1 downto 0)(31 downto 0);
       MSTATUS                  : in  array_2d(THREAD_POOL_SIZE-1 downto 0)(1 downto 0);
@@ -47,7 +46,7 @@ entity Debug_UNIT is
       regfile                  : in  array_3d(THREAD_POOL_SIZE-1 downto 0)(RF_SIZE-1 downto 0)(31 downto 0);
       pc_IE                    : in  std_logic_vector (31 downto 0);
       pc_ID                    : in  std_logic_vector (31 downto 0);
-      harc_ID                  : in  integer range THREAD_POOL_SIZE-1 downto 0;
+      harc_ID                  : in  natural range THREAD_POOL_SIZE-1 downto 0;
       ebreak_instr             : in  std_logic;
       dbg_ack_i                : in  std_logic;
       taken_branch             : in  std_logic;

@@ -240,7 +240,7 @@ begin
 
       if dsp_sci_we(h)(i) = '1' and dsp_sci_wr_gnt(h) = '1' then         -- DSP write port;
         for j in 0 to SIMD-1 loop        -- Loop through the sub-scratchpad banks
-          sc_we(h)((SIMD)*i+j)    <= dsp_we_word(h)(j);
+          sc_we(h)((SIMD)*i+j)      <= dsp_we_word(h)(j);
           sc_addr_wr(h)((SIMD)*i+j) <= std_logic_vector(unsigned(dsp_sc_write_addr(h)(Addr_Width-1 downto SIMD_BITS+2)) + wr_offset(h)(j));
           sc_data_wr(h)((SIMD)*i+j) <= dsp_sc_data_write_int_wire(h)(31+32*j downto 32*j);
         end loop;

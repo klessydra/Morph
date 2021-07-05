@@ -35,11 +35,11 @@ entity Scratchpad_memory is
   );
   port(
     clk_i          : in  std_logic;
-    sc_we          : in  array_2d(ACCL_NUM - 1 downto 0)(SIMD*SPM_NUM-1 downto 0);
-    sc_addr_wr     : in  array_3d(ACCL_NUM - 1 downto 0)(SIMD*SPM_NUM-1 downto 0)(Addr_Width-(SIMD_BITS+3) downto 0);
-    sc_addr_rd     : in  array_3d(ACCL_NUM - 1 downto 0)(SIMD*SPM_NUM-1 downto 0)(Addr_Width-(SIMD_BITS+3) downto 0);
-    sc_data_wr     : in  array_3d(ACCL_NUM - 1 downto 0)(SIMD*SPM_NUM-1 downto 0)(Data_Width-1 downto 0);
-    sc_data_rd     : out array_3d(ACCL_NUM - 1 downto 0)(SIMD*SPM_NUM-1 downto 0)(Data_Width-1 downto 0)
+    sc_we          : in  array_2d(ACCL_NUM-1 downto 0)(SIMD*SPM_NUM-1 downto 0);
+    sc_addr_wr     : in  array_3d(ACCL_NUM-1 downto 0)(SIMD*SPM_NUM-1 downto 0)(Addr_Width-(SIMD_BITS+3) downto 0);
+    sc_addr_rd     : in  array_3d(ACCL_NUM-1 downto 0)(SIMD*SPM_NUM-1 downto 0)(Addr_Width-(SIMD_BITS+3) downto 0);
+    sc_data_wr     : in  array_3d(ACCL_NUM-1 downto 0)(SIMD*SPM_NUM-1 downto 0)(Data_Width-1 downto 0);
+    sc_data_rd     : out array_3d(ACCL_NUM-1 downto 0)(SIMD*SPM_NUM-1 downto 0)(Data_Width-1 downto 0)
     );
 end Scratchpad_memory;
 

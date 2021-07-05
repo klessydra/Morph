@@ -29,7 +29,7 @@ use work.riscv_klessydra.all;
 
 entity CSR_Unit is
   generic (
-    THREAD_POOL_SIZE      : integer;
+    THREAD_POOL_SIZE      : natural;
     ACCL_NUM              : natural;
     Addr_Width            : natural;
     replicate_accl_en     : natural;
@@ -49,14 +49,13 @@ entity CSR_Unit is
     served_ls_except_condition  : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     served_dsp_except_condition : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     harc_sleep                  : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
-    harc_EXEC                   : in  integer range THREAD_POOL_SIZE-1 downto 0;
-    harc_to_csr                 : in  integer range THREAD_POOL_SIZE-1 downto 0;
+    harc_EXEC                   : in  natural range THREAD_POOL_SIZE-1 downto 0;
+    harc_to_csr                 : in  natural range THREAD_POOL_SIZE-1 downto 0;
     instr_word_IE               : in  std_logic_vector(31 downto 0);
     served_except_condition     : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     served_mret_condition       : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     served_irq                  : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     pc_except_value_wire        : in  array_2d(THREAD_POOL_SIZE-1 downto 0)(31 downto 0);
-    dbg_req_o                   : in  std_logic;
     data_addr_internal          : in  std_logic_vector(31 downto 0);
     jump_instr                  : in  std_logic;
     branch_instr                : in  std_logic;
@@ -98,7 +97,7 @@ end entity;
 
 architecture CSR of CSR_Unit is
 
-  subtype harc_range is integer range THREAD_POOL_SIZE-1 downto 0;
+  subtype harc_range is natural range THREAD_POOL_SIZE-1 downto 0;
   subtype accl_range is integer range ACCL_NUM-1 downto 0;
 
   signal pc_IE_replicated : array_2d(harc_range)(31 downto 0);	
@@ -176,8 +175,6 @@ architecture CSR of CSR_Unit is
 
 begin
 
-
-
   MSTATUS       <= MSTATUS_internal;
   MEPC          <= MEPC_internal;
   MCAUSE        <= MCAUSE_internal;
@@ -214,7 +211,6 @@ begin
         MEPC_internal(h)                    <= MEPC_RESET_VALUE;
         MCAUSE_internal(h)                  <= MCAUSE_RESET_VALUE;
         MTVEC_internal(h)                   <= MTVEC_RESET_VALUE;
-        PCER(h)                             <= PCER_RESET_VALUE;
         --Reset of counters and related registers
         if (MCYCLE_EN = 1) then
           MCYCLE(h)                         <= x"00000000";
@@ -237,6 +233,9 @@ begin
           MHPMEVENT8(h)                     <= PCER_RESET_VALUE(7);
           MHPMEVENT9(h)                     <= PCER_RESET_VALUE(8);
           MHPMEVENT10(h)                    <= PCER_RESET_VALUE(9);
+        end if;
+        if (MHPMCOUNTER_EN = 1 or MCYCLE_EN = 1 or MINSTRET_EN = 1) then
+          PCER(h)                           <= PCER_RESET_VALUE;
         end if;
         MIP_internal(h)                     <= MIP_RESET_VALUE;
         served_ie_except_condition_lat(h)   <= '0'; 
@@ -262,7 +261,7 @@ begin
         --  ██║██╔══██╗██║▄▄ ██║ ██╔╝  ██╔══╝   ██╔██╗ ██║     ██╔══╝  ██╔═══╝    ██║       ██╔══██║██╔══██║██║╚██╗██║██║  ██║██║     ██╔══╝  ██╔══██╗  --
         --  ██║██║  ██║╚██████╔╝██╔╝   ███████╗██╔╝ ██╗╚██████╗███████╗██║        ██║       ██║  ██║██║  ██║██║ ╚████║██████╔╝███████╗███████╗██║  ██║  --
         --  ╚═╝╚═╝  ╚═╝ ╚══▀▀═╝ ╚═╝    ╚══════╝╚═╝  ╚═╝ ╚═════╝╚══════╝╚═╝        ╚═╝       ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝╚═════╝ ╚══════╝╚══════╝╚═╝  ╚═╝  --
-        --------------------------------------------------------------------------------------------------------------------------------------------------        
+        --------------------------------------------------------------------------------------------------------------------------------------------------
         served_ie_except_condition_lat(h)   <= served_ie_except_condition(h);
         served_ls_except_condition_lat(h)   <= served_ls_except_condition(h);
         served_dsp_except_condition_lat(h)  <= served_dsp_except_condition(h);
@@ -286,7 +285,10 @@ begin
           -- it is the MEIP bit, ext. irq
           MCAUSE_internal(h) <= "1" & std_logic_vector(to_unsigned(11, 31));  -- ext. irq
           MESTATUS(h)(2 downto 1)    <= MSTATUS_internal(h);
-          if trap_hndlr(h) = '0' then
+          if trap_hndlr(h) = '0' and MSTATUS_internal(h)(0) = '1' then
+            -- update the trap return address only if we return from mret, so that in
+            -- the case of fetch_enable_i is '0', and we are at mret and an interrupt
+            -- arrives, we will no need be returning to the old mret value.
             MEPC_internal(h) <= pc_IE;
           end if;     
           if WFI_Instr = '1' then
@@ -301,7 +303,10 @@ begin
           MCAUSE_internal(h) <= "1" & std_logic_vector(to_unsigned(3, 31));  -- sw interrupt
           MIP_internal(h)(3) <= '0'; -- we reset the sw int. request just being served
           MESTATUS(h)(2 downto 1)    <= MSTATUS_internal(h);
-          if trap_hndlr(h) = '0' then
+          if trap_hndlr(h) = '0' and MSTATUS_internal(h)(0) = '1' then
+            -- update the trap return address only if we return from mret, so that in
+            -- the case of fetch_enable_i is '0', and we are at mret and an interrupt
+            -- arrives, we will no need be returning to the old mret value.
             MEPC_internal(h) <= pc_IE;
           end if;     
           if WFI_Instr = '1' then
@@ -315,7 +320,10 @@ begin
           -- it is the MSIP bit, timer interrupt req
           MCAUSE_internal(h) <= "1" & std_logic_vector(to_unsigned(7, 31));  -- timer interrupt
           MESTATUS(h)(2 downto 1)    <= MSTATUS_internal(h);
-          if trap_hndlr(h) = '0' then
+          if trap_hndlr(h) = '0' and MSTATUS_internal(h)(0) = '1' then
+            -- update the trap return address only if we return from mret, so that in
+            -- the case of fetch_enable_i is '0', and we are at mret and an interrupt
+            -- arrives, we will no need be returning to the old mret value.
             MEPC_internal(h) <= pc_IE;
           end if;   
           if WFI_Instr = '1' then
@@ -349,8 +357,8 @@ begin
 
         -- mret-caused CSR updating ----------------------------------------
         elsif served_mret_condition(h) = '1' then
-          MSTATUS_internal(h)(1) <= '1';
-          MSTATUS_internal(h)(0) <= MSTATUS_internal(h)(1);
+            MSTATUS_internal(h)(1) <= '1';
+            MSTATUS_internal(h)(0) <= MSTATUS_internal(h)(1);
         -- CSR instruction handling ----------------------------------------      
         elsif(csr_instr_done_replicated(h) = '1') then
           csr_instr_done_replicated(h)      <= '0';
@@ -1095,7 +1103,7 @@ begin
 
         -- PERFORMANCE COUNTER AUTOMATIC UPDATING --
 
-        if dbg_req_o = '0' then
+        --if dbg_req_o = '0' then
           --THIS BIG CONDITION CHECKS WRITING TO THE CSR. IF A COUNTER IS WRITTEN, YOU DON'T HAVE TO INCREMENT IT.
           --The problems are only during writing on MCYCLE/H and MINSTRET/H or on any other counters that count csr instructions.
 
@@ -1201,7 +1209,7 @@ begin
             end if;
           end if;
 
-        end if;  --debug_req_o='0'
+        --end if;  --debug_req_o='0'
       end if;  -- reset or clk'event
     end process;
 
