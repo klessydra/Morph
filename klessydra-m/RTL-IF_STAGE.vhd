@@ -38,7 +38,8 @@ entity IF_STAGE is
     instr_rvalid_i             : in  std_logic;
     harc_sleep_wire            : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     harc_sleep                 : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
-    hart_sleep_count_FETCH     : out std_logic_vector(TPS_CEIL-1 downto 0); -- number of sleeping harts
+    CORE_STATE                 : in  std_logic_vector(THREAD_POOL_BASELINE downto 0);
+    CORE_STATE_FETCH           : out std_logic_vector(THREAD_POOL_BASELINE downto 0);
     served_irq                 : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     flush_decode               : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     harc_FETCH                 : out natural range THREAD_POOL_SIZE-1 downto 0;
@@ -55,7 +56,6 @@ entity IF_STAGE is
     pc_IE                      : in  std_logic_vector(31 downto 0);
     return_address             : in  array_2d(THREAD_POOL_SIZE-1 downto 0)(31 downto 0);
     -- branch related signals
-    sys_instr                  : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     absolute_jump              : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     branch_instr               : in  std_logic;
     flush_hart_FETCH           : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
@@ -191,7 +191,7 @@ begin
   branch_FETCH               <= '0';
   jump_FETCH                 <= '0';
   branch_predict_taken_ID    <= '0';
-  --hart_sleep_count_FETCH     <= (others => '0');
+  CORE_STATE_FETCH           <= CORE_STATE;
 
   instr_rvalid_ID <= instr_rvalid_i;
   instr_word_ID   <= instr_rdata_i when instr_rvalid_i = '1' else instr_word_ID_lat;
@@ -215,7 +215,7 @@ begin
   begin
     instr_word_ID    <= instr_word_ID_lat;
     instr_word_FETCH <= instr_word_FETCH_lat;
-    if unsigned(hart_sleep_count) = 0 and instr_rvalid_ID_int = '0' then  -- if all harts are asleep and there is no more valid instr pushed from the FETCH stage (i.e. instr_rvalid_ID_int = '0'), we will switch back
+    if CORE_STATE(IMT_MODE) = '1' and instr_rvalid_ID_int = '0' then  -- if all harts are asleep and there is no more valid instr pushed from the FETCH stage (i.e. instr_rvalid_ID_int = '0'), we will switch back
       instr_rvalid_ID <= instr_rvalid_i;
       if instr_rvalid_i = '1' then
         instr_word_ID <= instr_rdata_i;
@@ -227,7 +227,7 @@ begin
         instr_word_FETCH <= instr_rdata_i;
       end if;
     end if;
-    if unsigned(hart_sleep_count) = 0 then
+    if CORE_STATE(IMT_MODE) = '1' then
       instr_rvalid_FETCH <= instr_rvalid_FETCH_lat;
     else
       instr_rvalid_FETCH <= instr_rvalid_i or instr_rvalid_FETCH_lat;
@@ -239,15 +239,16 @@ begin
     if rst_ni = '0' then
       harc_FETCH             <= THREAD_POOL_SIZE-1;
       hart_sleep_count       <= (others => '0');
+      CORE_STATE_FETCH       <= '1' & (0 to THREAD_POOL_BASELINE-1 => '0');
       instr_rvalid_FETCH_lat <= '0';
       instr_rvalid_ID_int    <= '0';
     elsif rising_edge(clk_i) then
       hart_sleep_count <= std_logic_vector(to_unsigned(add_vect_bits(harc_sleep_wire),TPS_CEIL));
       instr_word_ID_lat <= instr_word_ID;
       -- signals that are triggered by instr_rvalid_i read harc_sleep
-      if unsigned(hart_sleep_count) = 0 and instr_rvalid_FETCH = '0' then
+      if CORE_STATE(IMT_MODE) = '1' and instr_rvalid_FETCH = '0' then
         instr_rvalid_ID_int    <= '0'; -- reset this signal back to zero
-        hart_sleep_count_FETCH <= (others => '0'); -- reset the sleep count to zero
+        CORE_STATE_FETCH       <= '1' & (0 to THREAD_POOL_BASELINE-1 => '0');
       else
         instr_rvalid_ID_int <= '0';
         if instr_rvalid_FETCH           = '1' and   -- valid instruction
@@ -260,7 +261,7 @@ begin
           pc_ID                  <= pc_FETCH;
           harc_ID                <= harc_FETCH;
           instr_rvalid_FETCH_lat <= '0'; -- when we dispatched our instr, that means we don't need to latch
-          hart_sleep_count_FETCH <= hart_sleep_count;
+          CORE_STATE_FETCH       <= CORE_STATE;
         elsif busy_ID = '1' then  -- if we have a stall, then we latch the imput
           if instr_rvalid_i = '1' then -- if the pipeline was not pushed to the next stage, and there is the input, then we latch that input
             instr_rvalid_FETCH_lat <= '1';
@@ -269,7 +270,7 @@ begin
       end if;
       -- signals that are triggered by instr_gnt_i read harc_sleep_wire
       if instr_gnt_i = '1' then
-        if unsigned(hart_sleep_count) = 0 and instr_rvalid_FETCH = '0' then
+        if CORE_STATE(IMT_MODE) = '1' and instr_rvalid_FETCH = '0' then
           pc_ID      <= pc_IF;
           harc_ID    <= harc_IF;
         end if;
@@ -304,7 +305,7 @@ begin
       sys_stall_lat           <= sys_stall;
       decoded_branching_instr <= (others => '0');
       OPCODE_wires          := OPCODE(instr_word_FETCH);
-      if unsigned(hart_sleep_count) = 0 and instr_rvalid_FETCH = '0' then
+      if CORE_STATE(IMT_MODE) = '1' and instr_rvalid_FETCH = '0' then
         rs1_valid_ID_int      <= '0';
         rs2_valid_ID_int      <= '0';
         rd_valid_ID_int       <= '0';
@@ -416,32 +417,29 @@ begin
     if absolute_jump(harc_FETCH) = '1' or served_irq /= (harc_range => '0') then
        jalr_stall <= '0';
     end if;
-    if sys_instr(harc_FETCH) = '1' or served_irq /= (harc_range => '0') then
-       sys_stall <= '0';
-    end if;
     if instr_rvalid_FETCH           = '1' and 
        --flush_hart_FETCH(harc_FETCH) = '0' and
        flush_fetch(harc_FETCH)      = '0' and
        --served_irq(harc_FETCH)                = '0' and
        --busy_ID                               = '0' and
-       unsigned(hart_sleep_count) /= 0 then
+       CORE_STATE(IMT_MODE) = '0' then
       case OPCODE_wires is
 
         when JAL =>         -- JAL instruction
-          if unsigned(hart_sleep_count) = 2 then -- when hart_sleep_count = 1, JAL will be handed in the decode stage
+          if CORE_STATE(SINGLE_HART_MODE) = '1' then -- when hart_sleep_count = 1, JAL will be handed in the decode stage
             jump_FETCH <= '1';
           end if;
 
         when JALR =>        -- JALR instruction
           jalr_FETCH <= '1';
-          if unsigned(hart_sleep_count_FETCH) = 1 then
+          if CORE_STATE_FETCH(DUAL_HART_MODE) = '1' then
             halt_update_FETCH_wire(harc_FETCH) <= '1';
           end if;
           --jalr_stall <= '1';
 
         when BRANCH =>      -- BRANCH instruction
           if branch_predict_en = 0 then
-            if unsigned(hart_sleep_count_FETCH) = 1 then
+            if CORE_STATE_FETCH(DUAL_HART_MODE) = '1' then
               halt_update_FETCH_wire(harc_FETCH) <= '1';
             end if;
             if branch_instr = '0' then
@@ -449,36 +447,20 @@ begin
             end if;
           elsif btb_en = 1 then
             if btb(btb_addr_rd) > "01" then
-              if unsigned(hart_sleep_count_FETCH) = 1 then
+              if CORE_STATE_FETCH(DUAL_HART_MODE) = '1' then
                 halt_update_FETCH_wire(harc_FETCH) <= '1';
               end if;
               branch_FETCH <= '1';
               branch_predict_taken_ID_wire <= '1';
             end if;
           elsif btb_en = 0 then
-            if unsigned(hart_sleep_count) = 2 then
+            if CORE_STATE(SINGLE_HART_MODE) = '1' then
               if instr_word_FETCH(31) = '1' then -- branch prediction taken for negative offsets
                 branch_FETCH <= '1';
                 branch_predict_taken_ID_wire <= '1';
               end if;
             end if;
           end if;
-
-        when SYSTEM =>
-          case FUNCT3_wires is
-            when PRIV =>
-              --if (rs1(instr_word_ID) = 0 and zero_rd_wire = '1')  -- AAA check if this condition is necessary
-                case FUNCT12_wires is
-                  when ECALL =>       -- ECALL instruction
-                    sys_stall <= '1'; -- flushes only the same hart op
-                  when EBREAK =>      -- EBREAK instruction       
-                  when mret =>        -- mret instruction
-                    sys_stall <= '1'; -- flushes only the same hart op
-                  when others =>
-                end case;
-              --end if;
-            when others =>
-          end case;
 
         when others =>
           null;
@@ -501,7 +483,7 @@ begin
       end if;
       -- AAA the btb_addr_wr might increment or decrement twice in case of a branch miss (i.e. were the branch stays in the IE for more than one cycle)
       btb_addr_wr := to_integer(unsigned(pc_IE(btb_len+1 downto 2))); -- CCC compressed instructions should go down to 1 instead
-      if unsigned(hart_sleep_count) /= 0 then
+      if CORE_STATE(IMT_MODE) = '0' then
         if branch_instr = '1' then
           if branch_taken = '1' then
             if btb(btb_addr_wr) < "11" then

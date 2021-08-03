@@ -69,7 +69,8 @@ entity IE_STAGE is
     decoded_instruction_IE    : in  std_logic_vector(EXEC_UNIT_INSTR_SET_SIZE-1 downto 0);
     harc_sleep_wire           : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     harc_sleep                : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
-    hart_sleep_count_ID       : in  std_logic_vector(TPS_CEIL-1 downto 0);
+    CORE_STATE                : in  std_logic_vector(THREAD_POOL_BASELINE downto 0);
+    CORE_STATE_ID             : in  std_logic_vector(THREAD_POOL_BASELINE downto 0);
     csr_addr_i                : out std_logic_vector(11 downto 0);
     ie_except_data            : out std_logic_vector(31 downto 0);
     ie_csr_wdata_i            : out std_logic_vector(31 downto 0);
@@ -92,7 +93,6 @@ entity IE_STAGE is
     absolute_address          : out std_logic_vector(31 downto 0);
     served_irq                : out std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     ebreak_instr              : out std_logic;
-    sys_instr                 : out std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     absolute_jump             : out std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     instr_rvalid_WB           : out std_logic;
     instr_word_IE_WB          : out std_logic_vector (31 downto 0);
@@ -133,6 +133,7 @@ architecture EXECUTE of IE_STAGE is
   --signal pass_BLTU                  : std_logic;
   --signal pass_BGE                   : std_logic;
   --signal pass_BGEU                  : std_logic;
+  signal pass_BRANCH                : std_logic;
 
   signal state_mulh, nextstate_mulh : mulh_states;
   signal state_mul, nextstate_mul   : mul_states;
@@ -182,8 +183,7 @@ architecture EXECUTE of IE_STAGE is
 
   signal flush_hart_int_wire        : std_logic_vector(harc_range);
   signal flush_hart_int             : std_logic_vector(harc_range);
-
-  signal hart_sleep_count           : std_logic_vector(TPS_CEIL-1 downto 0); -- number of sleeping harts
+  signal flush_hart_pending         : std_logic_vector(harc_range);
 
 
   -- signals for counting intructions
@@ -243,13 +243,11 @@ begin
       WB_EN_next_IE          <= '0';
       halt_update_IE         <= (others => '0');
       halt_update_IE_pending <= (others => '0');
-      --hart_sleep_count       <= (others => '0');
     elsif rising_edge(clk_i) then
       IE_WB_EN         <= '0';
       MUL_WB_EN        <= '0';
       WB_EN_next_IE    <= '0';
       core_busy_IE_lat <= core_busy_IE;
-      hart_sleep_count <= std_logic_vector(to_unsigned(add_vect_bits(harc_sleep_wire),TPS_CEIL));
       -- Branch miss handling ---------------------------------------------
       if instr_gnt_i = '1' then
         halt_update_IE <= halt_update_IE_wire or halt_update_IE_pending;
@@ -544,7 +542,6 @@ begin
     nextstate_IE_wires               := normal;
     harc_to_csr                      <= harc_EXEC;
     absolute_jump_wires              := (others => '0');
-    sys_instr                        <= (others => '0');
     core_busy_IE_wires               := '0';
     IE_except_condition_wires        := '0';
     set_branch_condition_wires       := '0';
@@ -594,16 +591,16 @@ begin
       end loop;
     elsif fetch_stage_en = 1 then
       for h in harc_range loop
-        flush_hart_int_wire(h)    <= '0'; -- reset the wire if the pipeline is not halted, else latch the flush signal
-        IE_flush_hart_ID(h)       <= flush_hart_int_wire(h) or flush_hart_int(h); -- flushes two cycles of the current hart, hence its "int_wire or int"
-        IE_flush_hart_FETCH(h)    <= flush_hart_int_wire(h); -- flushes only one cycle of the current hart
+        flush_hart_int_wire(h)  <= '0'; -- reset the wire if the pipeline is not halted, else latch the flush signal
+        IE_flush_hart_FETCH(h)    <= flush_hart_int_wire(h) or flush_hart_pending(h); -- flushes only one cycle of the current hart
+        IE_flush_hart_ID(h)       <= flush_hart_int_wire(h) or flush_hart_pending(h) or flush_hart_int(h); -- flushes two cycles of the current hart, hence its "int_wire or int"
       end loop;
     end if;
 
     case state_IE is                  -- stage status
       when sleep =>
         if fetch_stage_en = 1 then
-          if unsigned(hart_sleep_count) = 1 then
+          if CORE_STATE_ID(DUAL_HART_MODE) = '1' then
             halt_update_IE_wire(harc_EXEC) <= '1';  -- maintain the halt from the mret
           end if;
         end if;
@@ -633,7 +630,7 @@ begin
           served_irq_wires(harc_EXEC) := '1';
           ie_taken_branch_wires       := '1';
           if fetch_stage_en = 1 then
-            if unsigned(hart_sleep_count) = 1 then
+            if CORE_STATE_ID(DUAL_HART_MODE) = '1' then
               halt_update_IE_wire(harc_EXEC) <= '1'; -- AAA find a cleaner way to do this when having two threads and a fetch stage
             end if;
           end if;
@@ -650,13 +647,13 @@ begin
               flush_hart_int_wire(harc_EXEC) <= '1';
             end if;
             if fetch_stage_en = 0 then
-              if unsigned(hart_sleep_count) < 2 or dsp_to_jump(harc_EXEC) = '1' then -- dsp_tp_jump is handled here, and not in previous stages
+              if CORE_STATE_ID(SINGLE_HART_MODE) = '0' or dsp_to_jump(harc_EXEC) = '1' then -- dsp_tp_jump is handled here, and not in previous stages
                 set_branch_condition_wires := '1';
                 ie_taken_branch_wires      := '1';
                 Immediate                  <= UJ_immediate(instr_word_IE);
               end if;
             else
-              if unsigned(hart_sleep_count) = 0 or dsp_to_jump(harc_EXEC) = '1' then -- dsp_tp_jump is handled here, and not in previous stages
+              if CORE_STATE_ID(IMT_MODE) = '1' or dsp_to_jump(harc_EXEC) = '1' then -- dsp_tp_jump is handled here, and not in previous stages
                 set_branch_condition_wires := '1';
                 ie_taken_branch_wires      := '1';
                 Immediate                  <= UJ_immediate(instr_word_IE);
@@ -665,192 +662,54 @@ begin
           end if;
 
           if decoded_instruction_IE(JALR_bit_position) = '1' then  -- JALR instruction
-            if jalr_flush(harc_EXEC) = '1' or morph_en = 0 or fetch_stage_en = 0 or unsigned(hart_sleep_count) = 0 then
+            if jalr_flush(harc_EXEC) = '1' then
+              flush_hart_int_wire(harc_EXEC) <= '1';
+            end if;
+            if jalr_flush(harc_EXEC) = '1' or morph_en = 0 or fetch_stage_en = 0 or CORE_STATE_ID(IMT_MODE) = '1' then
               set_branch_condition_wires     := '1';
               ie_taken_branch_wires          := '1';
               jump_instr_wires               := '1';
               absolute_jump_wires(harc_EXEC) := '1';
-              flush_hart_int_wire(harc_EXEC) <= '1';
               if fetch_stage_en = 1 then
-                if unsigned(hart_sleep_count_ID) = 1 then
+                if CORE_STATE_ID(DUAL_HART_MODE) = '1' then
                   halt_update_IE_wire(harc_EXEC) <= '1';
                 end if;
               end if;
             end if;
           end if;
 
-          if decoded_instruction_IE(BEQ_bit_position) = '1' then
+          if decoded_instruction_IE(BEQ_bit_position)  = '1' or
+             decoded_instruction_IE(BNE_bit_position)  = '1' or
+             decoded_instruction_IE(BLT_bit_position)  = '1' or
+             decoded_instruction_IE(BLTU_bit_position) = '1' or
+             decoded_instruction_IE(BGE_bit_position)  = '1' or
+             decoded_instruction_IE(BGEU_bit_position) = '1' then
             branch_instr_wires := '1';
-            if pass_BEQ = '1' then
+            if pass_BRANCH = '1' then
               branch_taken <= '1';
-              if (unsigned(hart_sleep_count_ID) = 1 and fetch_stage_en = 0) then
+              if (CORE_STATE_ID(DUAL_HART_MODE) = '1' and fetch_stage_en = 0) then
                 halt_update_IE_wire(harc_EXEC) <= '1';
               end if;
             else
               Immediate <= (std_logic_vector(to_unsigned(4, 32)));
             end if;
-            if (unsigned(hart_sleep_count) = 1 and fetch_stage_en = 0) or unsigned(hart_sleep_count) = 0 or branch_predict_en = 0 or morph_en = 0  then
-              if pass_BEQ = '1' then
+            if (CORE_STATE_ID(DUAL_HART_MODE) = '1' and fetch_stage_en = 0) or CORE_STATE_ID(IMT_MODE) = '1' or branch_predict_en = 0 or morph_en = 0  then
+              if pass_BRANCH = '1' then
                 set_branch_condition_wires := '1';
                 ie_taken_branch_wires      := '1';
               end if;
             else
-              if pass_BEQ = not branch_predict_taken_IE then
-                flush_hart_int_wire(harc_EXEC)     <= '1';
+              if pass_BRANCH = not branch_predict_taken_IE then
+                flush_hart_int_wire(harc_EXEC) <= '1';
                 if fetch_stage_en = 1 then
-                  if unsigned(hart_sleep_count_ID) = 1 then
+                  if CORE_STATE_ID(DUAL_HART_MODE) = '1' then
                     halt_update_IE_wire(harc_EXEC) <= '1';
                   end if;
                 end if;
-                set_branch_condition_wires  := '1';
-                ie_taken_branch_wires       := '1';
-              end if;
-            end if;
-          end if;
-
-          if decoded_instruction_IE(BNE_bit_position) = '1' then
-            branch_instr_wires := '1';
-            if pass_BNE = '1' then
-              branch_taken <= '1';
-              if (unsigned(hart_sleep_count_ID) = 1 and fetch_stage_en = 0) then
-                halt_update_IE_wire(harc_EXEC) <= '1';
-              end if;
-            else
-              Immediate <= (std_logic_vector(to_unsigned(4, 32)));
-            end if;
-            if (unsigned(hart_sleep_count) = 1 and fetch_stage_en = 0) or unsigned(hart_sleep_count) = 0 or branch_predict_en = 0  or morph_en = 0 then
-              if pass_BNE = '1' then
                 set_branch_condition_wires := '1';
                 ie_taken_branch_wires      := '1';
               end if;
-            else
-              if pass_BNE = not branch_predict_taken_IE then
-                flush_hart_int_wire(harc_EXEC)     <= '1';
-                if fetch_stage_en = 1 then
-                  if unsigned(hart_sleep_count_ID) = 1 then
-                    halt_update_IE_wire(harc_EXEC) <= '1';
-                  end if;
-                end if;
-                set_branch_condition_wires  := '1';
-                ie_taken_branch_wires       := '1';
-              end if;
             end if;
-          end if;
-
-          if decoded_instruction_IE(BLT_bit_position) = '1' then
-            branch_instr_wires := '1';
-            if pass_BLT = '1' then
-              branch_taken <= '1';
-              if (unsigned(hart_sleep_count_ID) = 1 and fetch_stage_en = 0) then
-                halt_update_IE_wire(harc_EXEC) <= '1';
-              end if;
-            else
-              Immediate <= (std_logic_vector(to_unsigned(4, 32)));
-            end if;
-            if (unsigned(hart_sleep_count) = 1 and fetch_stage_en = 0) or unsigned(hart_sleep_count) = 0 or branch_predict_en = 0 or morph_en = 0 then
-              if pass_BLT = '1' then
-                set_branch_condition_wires := '1';
-                ie_taken_branch_wires      := '1';
-              end if;
-            else
-              if pass_BLT = not branch_predict_taken_IE then
-                flush_hart_int_wire(harc_EXEC)     <= '1';
-                if fetch_stage_en = 1 then
-                  if unsigned(hart_sleep_count_ID) = 1 then
-                    halt_update_IE_wire(harc_EXEC) <= '1';
-                  end if;
-                end if;
-                set_branch_condition_wires  := '1';
-                ie_taken_branch_wires       := '1';
-              end if;
-            end if;
-          end if;
-
-          if decoded_instruction_IE(BLTU_bit_position) = '1' then
-            branch_instr_wires := '1';
-            if pass_BLTU = '1' then
-              branch_taken <= '1';
-              if (unsigned(hart_sleep_count_ID) = 1 and fetch_stage_en = 0) then
-                halt_update_IE_wire(harc_EXEC) <= '1';
-              end if;
-            else
-              Immediate <= (std_logic_vector(to_unsigned(4, 32)));
-            end if;
-            if (unsigned(hart_sleep_count) = 1 and fetch_stage_en = 0) or unsigned(hart_sleep_count) = 0 or branch_predict_en = 0 or morph_en = 0 then
-              if pass_BLTU = '1' then
-                set_branch_condition_wires := '1';
-                ie_taken_branch_wires      := '1';
-              end if;
-            else
-              if pass_BLTU = not branch_predict_taken_IE then
-                flush_hart_int_wire(harc_EXEC)     <= '1';
-                if fetch_stage_en = 1 then
-                  if unsigned(hart_sleep_count_ID) = 1 then
-                    halt_update_IE_wire(harc_EXEC) <= '1';
-                  end if;
-                end if;
-                set_branch_condition_wires  := '1';
-                ie_taken_branch_wires       := '1';
-              end if;
-            end if;
-          end if;
-
-          if decoded_instruction_IE(BGE_bit_position) = '1' then
-            branch_instr_wires := '1';
-            if pass_BGE = '1' then
-              branch_taken <= '1';
-              if (unsigned(hart_sleep_count_ID) = 1 and fetch_stage_en = 0) then
-                halt_update_IE_wire(harc_EXEC) <= '1';
-              end if;
-            else
-              Immediate <= (std_logic_vector(to_unsigned(4, 32)));
-            end if;
-            if (unsigned(hart_sleep_count) = 1 and fetch_stage_en = 0) or unsigned(hart_sleep_count) = 0 or branch_predict_en = 0 or morph_en = 0 then
-              if pass_BGE = '1' then
-                set_branch_condition_wires := '1';
-                ie_taken_branch_wires      := '1';
-              end if;
-            else
-              if pass_BGE = not branch_predict_taken_IE then
-                flush_hart_int_wire(harc_EXEC)     <= '1';
-                if fetch_stage_en = 1 then
-                  if unsigned(hart_sleep_count_ID) = 1 then
-                    halt_update_IE_wire(harc_EXEC) <= '1';
-                  end if;
-                end if;
-                set_branch_condition_wires  := '1';
-                ie_taken_branch_wires       := '1';
-              end if;
-            end if;
-          end if;
-
-          if decoded_instruction_IE(BGEU_bit_position) = '1' then
-            branch_instr_wires := '1';
-            if pass_BGEU = '1' then
-              branch_taken <= '1';
-              if (unsigned(hart_sleep_count_ID) = 1 and fetch_stage_en = 0) then
-                halt_update_IE_wire(harc_EXEC) <= '1';
-              end if;
-            else
-              Immediate <= (std_logic_vector(to_unsigned(4, 32)));
-            end if;
-            if (unsigned(hart_sleep_count) = 1 and fetch_stage_en = 0) or unsigned(hart_sleep_count) = 0 or branch_predict_en = 0 or morph_en = 0 then
-              if pass_BGEU = '1' then
-                set_branch_condition_wires := '1';
-                ie_taken_branch_wires      := '1';
-              end if;
-            else
-              if pass_BGEU = not branch_predict_taken_IE then
-                flush_hart_int_wire(harc_EXEC)     <= '1';
-                if fetch_stage_en = 1 then
-                  if unsigned(hart_sleep_count_ID) = 1 then
-                    halt_update_IE_wire(harc_EXEC) <= '1';
-                  end if;
-                end if;
-                set_branch_condition_wires  := '1';
-                ie_taken_branch_wires       := '1';       
-              end if;        
-            end if;        
           end if;
 
           if decoded_instruction_IE(SW_MIP_bit_position) = '1' then
@@ -892,10 +751,11 @@ begin
           end if;
 
           if decoded_instruction_IE(ECALL_bit_position) = '1' then
-            IE_except_condition_wires := '1';
-            ie_taken_branch_wires     := '1';
+            flush_hart_int_wire(harc_EXEC) <= '1';
+            IE_except_condition_wires      := '1';
+            ie_taken_branch_wires          := '1';
             if fetch_stage_en = 1 then
-              if unsigned(hart_sleep_count) = 1 then
+              if CORE_STATE_ID(DUAL_HART_MODE) = '1' then
                 halt_update_IE_wire(harc_EXEC) <= '1';  -- AAA find a cleaner way to do this when having two threads and a fetch stage
               end if;
             end if;
@@ -906,15 +766,15 @@ begin
           end if;
 
           if decoded_instruction_IE(MRET_bit_position) = '1' then
-            set_mret_condition_wires := '1';
-            ie_taken_branch_wires    := '1';
-            sys_instr(harc_EXEC)     <= '1';
+            flush_hart_int_wire(harc_EXEC) <= '1';
+            set_mret_condition_wires       := '1';
+            ie_taken_branch_wires          := '1';
             if fetch_enable_i = '0' then
               nextstate_IE_wires      := sleep;
               core_busy_IE_wires      := '1';
             end if;
             if fetch_stage_en = 1 then
-              if unsigned(hart_sleep_count) = 1 then
+              if CORE_STATE_ID(DUAL_HART_MODE) = '1' then
                 halt_update_IE_wire(harc_EXEC) <= '1'; -- AAA find a cleaner way to do this when having two threads and a fetch stage
               end if;
             end if;
@@ -927,13 +787,19 @@ begin
               ie_taken_branch_wires    := '1';
             end if;
             if fetch_stage_en = 1 then
-              if unsigned(hart_sleep_count) = 1 then
+              if CORE_STATE_ID(DUAL_HART_MODE) = '1' then
                 halt_update_IE_wire(harc_EXEC) <= '1'; -- AAA find a cleaner way to do this when having two threads and a fetch stage
               end if;
             end if;
           end if;
 
           if decoded_instruction_IE(ILL_bit_position) = '1' then  -- ILLEGAL_INSTRUCTION
+            flush_hart_int_wire(harc_EXEC) <= '1';
+            if fetch_stage_en = 1 then
+              if CORE_STATE_ID(DUAL_HART_MODE) = '1' then
+                halt_update_IE_wire(harc_EXEC) <= '1';
+              end if;
+            end if;
             IE_except_condition_wires := '1';
             ie_taken_branch_wires     := '1';
           end if;
@@ -1067,6 +933,7 @@ begin
   begin
     
     if rst_ni = '0' then
+      flush_hart_pending <= (others => '0');
       flush_hart_int     <= (others => '0');
       branch_instr_lat   <= '0'; 
       jump_instr_lat     <= '0';
@@ -1077,10 +944,17 @@ begin
         state_div        <= init;
       end if;
     elsif rising_edge(clk_i) then
-      flush_hart_int         <= flush_hart_int_wire;
+      flush_hart_int         <= flush_hart_int_wire or flush_hart_pending;
       branch_instr_lat       <= branch_instr;
       jump_instr_lat         <= jump_instr;
       state_IE               <= nextstate_IE;
+      if instr_gnt_i = '0' then
+        if flush_hart_int_wire(harc_EXEC) = '1' then
+          flush_hart_pending <= flush_hart_int_wire;
+        end if;
+      else
+        flush_hart_pending     <= (others => '0');
+      end if;
       if RV32M = 1 then
         state_mulh           <= nextstate_mulh;
         state_mul            <= nextstate_mul;
@@ -1111,14 +985,40 @@ begin
 
   IE_Mapper_comb : process(all)
   begin
-    add_op_A   <= (others => '0');
-    add_op_B   <= (others => '0');
-    sl_op_A    <= (others => '0');
-    sl_op_B    <= (others => '0');
-    sr_op_A    <= (others => '0');
-    sr_op_B    <= (others => '0');
-    logic_op_A <= (others => '0');
-    logic_op_B <= (others => '0');
+    add_op_A    <= (others => '0');
+    add_op_B    <= (others => '0');
+    sl_op_A     <= (others => '0');
+    sl_op_B     <= (others => '0');
+    sr_op_A     <= (others => '0');
+    sr_op_B     <= (others => '0');
+    logic_op_A  <= (others => '0');
+    logic_op_B  <= (others => '0');
+    pass_BRANCH <= '0';
+
+    if decoded_instruction_IE(BEQ_bit_position)  = '1' then
+      pass_BRANCH <= pass_BEQ;
+    end if;
+
+    if decoded_instruction_IE(BNE_bit_position)  = '1' then
+      pass_BRANCH <= pass_BNE;
+    end if;
+
+    if decoded_instruction_IE(BLT_bit_position)  = '1' then
+      pass_BRANCH <= pass_BLT;
+    end if;
+
+    if decoded_instruction_IE(BLTU_bit_position) = '1' then
+      pass_BRANCH <= pass_BLTU;
+    end if;
+
+    if decoded_instruction_IE(BGE_bit_position)  = '1' then
+      pass_BRANCH <= pass_BGE;
+    end if;
+
+    if decoded_instruction_IE(BGEU_bit_position) = '1' then
+      pass_BRANCH <= pass_BGEU;
+    end if;
+
 
     if decoded_instruction_IE(ADDI_bit_position) = '1' then
       add_op_A <= RS1_data_IE;

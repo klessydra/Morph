@@ -120,6 +120,7 @@ entity Pipeline is
     jalr_addr_FETCH            : out std_logic_vector(31 downto 0);
     harc_sleep_wire            : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     harc_sleep                 : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
+    CORE_STATE                 : in  std_logic_vector(THREAD_POOL_BASELINE downto 0);
     halt_update                : out std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
 
     -- clock, reset active low, test enable
@@ -167,12 +168,11 @@ architecture Pipe of Pipeline is
   signal busy_ID                : std_logic;
   signal core_busy_IE           : std_logic;
   signal data_dependency        : std_logic;
-  signal data_dependency_rs1    : std_logic;
-  signal data_dependency_rs2    : std_logic;
-  signal data_dependency_rd     : std_logic;
+  signal bypass_rs1             : std_logic;
+  signal bypass_rs2             : std_logic;
+  signal bypass_rd_read         : std_logic;
   signal jalr_stall             : std_logic;
   signal branch_stall           : std_logic;
-  signal sys_instr              : std_logic_vector(harc_range);
 
   signal sleep_state            : std_logic;
   signal ls_sci_wr_gnt          : std_logic;
@@ -244,8 +244,8 @@ architecture Pipe of Pipeline is
   signal harc_IE_WB             : natural range THREAD_POOL_SIZE-1 downto 0;
   signal harc_WB                : natural range THREAD_POOL_SIZE-1 downto 0;
 
-  signal hart_sleep_count_FETCH : std_logic_vector(TPS_CEIL-1 downto 0);
-  signal hart_sleep_count_ID    : std_logic_vector(TPS_CEIL-1 downto 0);
+  signal CORE_STATE_FETCH       : std_logic_vector(THREAD_POOL_BASELINE downto 0);
+  signal CORE_STATE_ID          : std_logic_vector(THREAD_POOL_BASELINE downto 0);
 
   -- DSP Unit Signals
   signal ls_sc_data_write_wire  : std_logic_vector(Data_Width-1 downto 0);
@@ -380,7 +380,8 @@ architecture Pipe of Pipeline is
     instr_rvalid_i             : in  std_logic;
     harc_sleep_wire            : in  std_logic_vector(harc_range);
     harc_sleep                 : in  std_logic_vector(harc_range);
-    hart_sleep_count_FETCH     : out std_logic_vector(TPS_CEIL-1 downto 0); -- number of sleeping harts
+    CORE_STATE                 : in  std_logic_vector(THREAD_POOL_BASELINE downto 0);
+    CORE_STATE_FETCH           : out std_logic_vector(THREAD_POOL_BASELINE downto 0);
     served_irq                 : in  std_logic_vector(harc_range);
     flush_decode               : in  std_logic_vector(harc_range);
     harc_IF                    : in  natural range THREAD_POOL_SIZE-1 downto 0;
@@ -397,8 +398,7 @@ architecture Pipe of Pipeline is
     instr_rvalid_IE            : in  std_logic;
     pc_IE                      : in  std_logic_vector(31 downto 0);
     return_address             : in  array_2d(THREAD_POOL_SIZE-1 downto 0)(31 downto 0);
-    -- brnahc related signals
-    sys_instr                  : in  std_logic_vector(harc_range);
+    -- branch related signals
     absolute_jump              : in  std_logic_vector(harc_range);
     branch_instr               : in  std_logic;
     flush_hart_FETCH           : in  std_logic_vector(harc_range);
@@ -469,9 +469,9 @@ architecture Pipe of Pipeline is
     rd_valid_ID                : in  std_logic;
     rd_read_valid_ID           : in  std_logic;
     data_dependency            : out std_logic;
-    data_dependency_rs1        : out std_logic;
-    data_dependency_rs2        : out std_logic;
-    data_dependency_rd         : out std_logic;
+    bypass_rs1                 : out std_logic;
+    bypass_rs2                 : out std_logic;
+    bypass_rd_read             : out std_logic;
     jalr_stall                 : out std_logic;
     branch_stall               : out std_logic;
     core_busy_IE               : in  std_logic;
@@ -508,8 +508,9 @@ architecture Pipe of Pipeline is
     spm_rs2                    : out std_logic;
     harc_sleep_wire            : in  std_logic_vector(harc_range);
     harc_sleep                 : in  std_logic_vector(harc_range);
-    hart_sleep_count_FETCH     : in  std_logic_vector(TPS_CEIL-1 downto 0);
-    hart_sleep_count_ID        : out std_logic_vector(TPS_CEIL-1 downto 0);
+    CORE_STATE                 : in  std_logic_vector(THREAD_POOL_BASELINE downto 0);
+    CORE_STATE_FETCH           : in  std_logic_vector(THREAD_POOL_BASELINE downto 0);
+    CORE_STATE_ID              : out std_logic_vector(THREAD_POOL_BASELINE downto 0);
     set_except_condition       : in  std_logic;
     served_irq                 : in  std_logic_vector(harc_range);
     flush_decode               : out std_logic_vector(harc_range);
@@ -667,7 +668,8 @@ architecture Pipe of Pipeline is
     decoded_instruction_IE    : in  std_logic_vector(EXEC_UNIT_INSTR_SET_SIZE-1 downto 0);
     harc_sleep_wire           : in  std_logic_vector(harc_range);
     harc_sleep                : in  std_logic_vector(harc_range);
-    hart_sleep_count_ID       : in  std_logic_vector(TPS_CEIL-1 downto 0);
+    CORE_STATE                : in  std_logic_vector(THREAD_POOL_BASELINE downto 0);
+    CORE_STATE_ID             : in  std_logic_vector(THREAD_POOL_BASELINE downto 0);
     csr_addr_i                : out std_logic_vector(11 downto 0);
     ie_except_data            : out std_logic_vector(31 downto 0);
     ie_csr_wdata_i            : out std_logic_vector(31 downto 0);
@@ -690,7 +692,6 @@ architecture Pipe of Pipeline is
     absolute_address          : out std_logic_vector(31 downto 0);
     served_irq                : out std_logic_vector(harc_range);
     ebreak_instr              : out std_logic;
-    sys_instr                 : out std_logic_vector(harc_range);
     absolute_jump             : out std_logic_vector(harc_range);
     instr_word_IE_WB          : out std_logic_vector (31 downto 0);
     IE_WB_EN                  : out std_logic;
@@ -840,9 +841,9 @@ architecture Pipe of Pipeline is
     harc_ID                    : in  natural range THREAD_POOL_SIZE-1 downto 0;
     pc_ID                      : in  std_logic_vector(31 downto 0);  -- pc_ID is PC entering ID stage
     data_dependency            : in  std_logic;
-    data_dependency_rs1        : in  std_logic;
-    data_dependency_rs2        : in  std_logic;
-    data_dependency_rd         : in  std_logic;
+    bypass_rs1                 : in  std_logic;
+    bypass_rs2                 : in  std_logic;
+    bypass_rd_read             : in  std_logic;
     jalr_stall                 : in  std_logic;
     branch_stall               : in  std_logic;
     core_busy_IE               : in  std_logic;
@@ -951,7 +952,8 @@ begin
     instr_rvalid_i             => instr_rvalid_i,
     harc_sleep_wire            => harc_sleep_wire,
     harc_sleep                 => harc_sleep,
-    hart_sleep_count_FETCH     => hart_sleep_count_FETCH,
+    CORE_STATE                 => CORE_STATE,
+    CORE_STATE_FETCH           => CORE_STATE_FETCH,
     served_irq                 => served_irq,
     flush_decode               => flush_decode,
     harc_FETCH                 => harc_FETCH,
@@ -967,7 +969,6 @@ begin
     instr_rvalid_IE            => instr_rvalid_IE,
     pc_IE                      => pc_IE,
     return_address             => return_address,
-    sys_instr                  => sys_instr,
     absolute_jump              => absolute_jump, 
     branch_instr               => branch_instr, 
     flush_hart_FETCH           => flush_hart_FETCH, 
@@ -1033,9 +1034,9 @@ begin
     rd_valid_ID                => rd_valid_ID,
     rd_read_valid_ID           => rd_read_valid_ID,
     data_dependency            => data_dependency,
-    data_dependency_rs1        => data_dependency_rs1,
-    data_dependency_rs2        => data_dependency_rs2,        
-    data_dependency_rd         => data_dependency_rd,        
+    bypass_rs1                 => bypass_rs1,
+    bypass_rs2                 => bypass_rs2,
+    bypass_rd_read             => bypass_rd_read,
     jalr_stall                 => jalr_stall,
     branch_stall               => branch_stall,
     core_busy_IE               => core_busy_IE,
@@ -1076,8 +1077,9 @@ begin
     branch_predict_taken_IE    => branch_predict_taken_IE,
     harc_sleep_wire            => harc_sleep_wire,
     harc_sleep                 => harc_sleep,
-    hart_sleep_count_FETCH     => hart_sleep_count_FETCH,
-    hart_sleep_count_ID        => hart_sleep_count_ID,
+    CORE_STATE                 => CORE_STATE,
+    CORE_STATE_FETCH           => CORE_STATE_FETCH,
+    CORE_STATE_ID              => CORE_STATE_ID,
     set_except_condition       => set_except_condition,
     served_irq                 => served_irq,
     flush_decode               => flush_decode,
@@ -1220,7 +1222,8 @@ begin
     decoded_instruction_IE     => decoded_instruction_IE,
     harc_sleep_wire            => harc_sleep_wire,
     harc_sleep                 => harc_sleep,
-    hart_sleep_count_ID        => hart_sleep_count_ID,
+    CORE_STATE                 => CORE_STATE,
+    CORE_STATE_ID              => CORE_STATE_ID,
     csr_addr_i                 => csr_addr_i,
     ie_except_data             => ie_except_data,
     ie_csr_wdata_i             => ie_csr_wdata_i,
@@ -1243,7 +1246,6 @@ begin
     absolute_address           => absolute_address,
     served_irq                 => served_irq,
     ebreak_instr               => ebreak_instr,
-    sys_instr                  => sys_instr,
     absolute_jump              => absolute_jump,
     instr_word_IE_WB           => instr_word_IE_WB,
     IE_WB_EN                   => IE_WB_EN,
@@ -1388,9 +1390,9 @@ begin
     harc_ID                    => harc_ID,
     pc_ID                      => pc_ID,
     data_dependency            => data_dependency,
-    data_dependency_rs1        => data_dependency_rs1,
-    data_dependency_rs2        => data_dependency_rs2,        
-    data_dependency_rd         => data_dependency_rd,        
+    bypass_rs1                 => bypass_rs1,
+    bypass_rs2                 => bypass_rs2,        
+    bypass_rd_read             => bypass_rd_read,        
     jalr_stall                 => jalr_stall,
     branch_stall               => branch_stall, 
     core_busy_IE               => core_busy_IE,

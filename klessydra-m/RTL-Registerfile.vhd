@@ -46,9 +46,9 @@ entity REGISTERFILE is
     harc_ID                 : in  natural range THREAD_POOL_SIZE-1 downto 0;
     pc_ID                   : in  std_logic_vector(31 downto 0);  -- pc_ID is PC entering ID stage
     data_dependency         : in  std_logic;
-    data_dependency_rs1     : in  std_logic;
-    data_dependency_rs2     : in  std_logic;
-    data_dependency_rd      : in  std_logic;
+    bypass_rs1              : in  std_logic;
+    bypass_rs2              : in  std_logic;
+    bypass_rd_read          : in  std_logic;
     jalr_stall              : in  std_logic;
     branch_stall            : in  std_logic;
     core_busy_IE            : in  std_logic;
@@ -178,7 +178,7 @@ begin
           end if;
         end if;
        -- pragma translate_off
-        RD_Data_IE  <= regfile(harc_ID)(rd(instr_word_ID)) when  morph_en = 0 or data_dependency_rd = '0' or harc_ID /= harc_WB else WB_RD; -- reading the 'rd' data here is only for debugging purposes if the acclerator is disabled
+        RD_Data_IE  <= regfile(harc_ID)(rd(instr_word_ID)) when  morph_en = 0 or bypass_rd_read = '0' or harc_ID /= harc_WB else WB_RD; -- reading the 'rd' data here is only for debugging purposes if the acclerator is disabled
         RS1_Addr_IE <= std_logic_vector(to_unsigned(rs1(instr_word_ID), 5)); -- debugging signals
         RS2_Addr_IE <= std_logic_vector(to_unsigned(rs2(instr_word_ID), 5)); -- debugging signals
         RD_Addr_IE  <= std_logic_vector(to_unsigned(rd(instr_word_ID), 5)); -- debugging signals
@@ -192,9 +192,9 @@ begin
     end if;  -- clk
   end process;
 
-  RS1_Data_IE_wire <= regfile(harc_ID)(rs1(instr_word_ID)) when morph_en = 0 or data_dependency_rs1 = '0' or harc_ID /= harc_WB else WB_RD; 
-  RS2_Data_IE_wire <= regfile(harc_ID)(rs2(instr_word_ID)) when morph_en = 0 or data_dependency_rs2 = '0' or harc_ID /= harc_WB else WB_RD;
-  RD_Data_IE_wire  <= regfile(harc_ID)(rd(instr_word_ID))  when morph_en = 0 or data_dependency_rd  = '0' or harc_ID /= harc_WB else WB_RD;
+  RS1_Data_IE_wire <= regfile(harc_ID)(rs1(instr_word_ID)) when morph_en = 0 or bypass_rs1 = '0' or harc_ID /= harc_WB else WB_RD; 
+  RS2_Data_IE_wire <= regfile(harc_ID)(rs2(instr_word_ID)) when morph_en = 0 or bypass_rs2 = '0' or harc_ID /= harc_WB else WB_RD;
+  RD_Data_IE_wire  <= regfile(harc_ID)(rd(instr_word_ID))  when morph_en = 0 or bypass_rd_read  = '0' or harc_ID /= harc_WB else WB_RD;
 
   end generate; -- LUTRAM_RF = 0
 
@@ -210,18 +210,18 @@ begin
     end if;  -- instr. conditions
     if morph_en = 1 then
       if rs1(instr_word_ID) /= 0 then
-        RS1_Data_IE_wire <= regfile_lutram_rs1(32*harc_ID+rs1(instr_word_ID)) when data_dependency_rs1 = '0' or harc_ID /= harc_WB else WB_RD; 
+        RS1_Data_IE_wire <= regfile_lutram_rs1(32*harc_ID+rs1(instr_word_ID)) when bypass_rs1 = '0' or harc_ID /= harc_WB else WB_RD; 
       else
         RS1_Data_IE_wire <= (others => '0');
       end if;
       if rs2(instr_word_ID) /= 0 then
-        RS2_Data_IE_wire <= regfile_lutram_rs2(32*harc_ID+rs2(instr_word_ID)) when data_dependency_rs2 = '0' or harc_ID /= harc_WB else WB_RD;
+        RS2_Data_IE_wire <= regfile_lutram_rs2(32*harc_ID+rs2(instr_word_ID)) when bypass_rs2 = '0' or harc_ID /= harc_WB else WB_RD;
       else
         RS2_Data_IE_wire <= (others => '0');
       end if;
       if accl_en = 1 then
         if rs1(instr_word_ID) /= 0 then
-          RD_Data_IE_wire <= regfile_lutram_rd(32*harc_ID+rd(instr_word_ID)) when morph_en = 0 or data_dependency_rd = '0' or harc_ID /= harc_WB else WB_RD; -- only the DSP unit reads the accelerator
+          RD_Data_IE_wire <= regfile_lutram_rd(32*harc_ID+rd(instr_word_ID)) when morph_en = 0 or bypass_rd_read = '0' or harc_ID /= harc_WB else WB_RD; -- only the DSP unit reads the accelerator
         else
           RD_Data_IE_wire <= (others => '0');
         end if;

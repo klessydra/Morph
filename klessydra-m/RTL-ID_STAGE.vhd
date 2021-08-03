@@ -71,9 +71,9 @@ entity ID_STAGE is
     rd_valid_ID                : in  std_logic;
     rd_read_valid_ID           : in  std_logic;
     data_dependency            : out std_logic;
-    data_dependency_rs1        : out std_logic;
-    data_dependency_rs2        : out std_logic;
-    data_dependency_rd         : out std_logic;
+    bypass_rs1                 : out std_logic;
+    bypass_rs2                 : out std_logic;
+    bypass_rd_read             : out std_logic;
     jalr_stall                 : out std_logic;
     branch_stall               : out std_logic;
     core_busy_IE               : in  std_logic;
@@ -98,8 +98,9 @@ entity ID_STAGE is
     spm_rs2                    : out std_logic;
     harc_sleep_wire            : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     harc_sleep                 : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
-    hart_sleep_count_FETCH     : in  std_logic_vector(TPS_CEIL-1 downto 0);
-    hart_sleep_count_ID        : out std_logic_vector(TPS_CEIL-1 downto 0);
+    CORE_STATE                 : in  std_logic_vector(THREAD_POOL_BASELINE downto 0);
+    CORE_STATE_FETCH           : in  std_logic_vector(THREAD_POOL_BASELINE downto 0);
+    CORE_STATE_ID              : out std_logic_vector(THREAD_POOL_BASELINE downto 0);
     set_except_condition       : in  std_logic;
     served_irq                 : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     flush_decode               : out std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
@@ -172,8 +173,6 @@ architecture DECODE of ID_STAGE is
   signal rd_valid                  : std_logic;
   signal rd_read_valid             : std_logic;
 
-  signal hart_sleep_count          : std_logic_vector(TPS_CEIL-1 downto 0); -- number of sleeping harts
-
   signal Immediate                 : std_logic_vector(31 downto 0);
 
   signal instr_rvalid_ID_int_lat   : std_logic;
@@ -239,8 +238,7 @@ begin
       pc_IE               <= (others => '0');
       flush_decode        <= (others => '0');
       jalr_flush          <= (others => '0');
-      hart_sleep_count    <= (others => '0');
-      hart_sleep_count_ID <= (others => '0');
+      CORE_STATE_ID       <= '1' & (0 to THREAD_POOL_BASELINE-1 => '0');
       harc_EXEC           <=  0;
       instr_rvalid_IE     <= '0';
       ie_instr_req        <= '0';
@@ -248,7 +246,6 @@ begin
       comparator_en       <= '0';
       WB_EN_next_ID       <= '0';
     elsif rising_edge(clk_i) then
-      hart_sleep_count <= std_logic_vector(to_unsigned(add_vect_bits(harc_sleep_wire),TPS_CEIL));
       flush_decode     <= (others => '0');
       jalr_flush       <= (others => '0');
       ls_instr_req     <= '0';
@@ -285,9 +282,9 @@ begin
         -- harc propagation
         harc_EXEC           <= harc_ID;
         if fetch_stage_en = 1 then
-          hart_sleep_count_ID <= hart_sleep_count_FETCH;
+          CORE_STATE_ID       <= CORE_STATE_FETCH;
         else
-          hart_sleep_count_ID <= hart_sleep_count;
+          CORE_STATE_ID       <= CORE_STATE;
         end if;
         --S_Imm_IE           <= std_logic_vector(to_unsigned(S_immediate(instr_word_ID), 12));
         --I_Imm_IE           <= std_logic_vector(to_unsigned(to_integer(unsigned(I_immediate(instr_word_ID))), 12));
@@ -325,7 +322,7 @@ begin
         -- read data from the operand registers
         -- Decode Starts here
 
-        case OPCODE_wires is  -- AAA for illegal instructions place an instruction into instr_word_IE as a NOP
+        case OPCODE_wires is
       
           when OP_IMM =>
             ie_instr_req <= '1';
@@ -474,7 +471,7 @@ begin
             if zero_rd_wire = '0' then
               WB_EN_next_ID <= '1';
             end if;
-            if rs1(instr_word_ID) /= 1 or data_dependency_rs1 = '1' or  data_dependency_JALR = '1' then
+            if rs1(instr_word_ID) /= 1 or bypass_rs1 = '1' or  data_dependency_JALR = '1' then
               jalr_flush(harc_ID) <= '1';
             end if;
             ie_instr_req <= '1';
@@ -814,20 +811,17 @@ begin
        flush_hart_ID(harc_ID) = '0' and
        flush_decode(harc_ID)  = '0' and
        served_irq(harc_ID)    = '0' and
-       unsigned(hart_sleep_count) /= 0 then
+       CORE_STATE(IMT_MODE) = '0' then
       case OPCODE_wires is
 
         when JAL =>         -- JAL instruction
-          -- AAA chnge all these to thread_pool_baseline-1
-          if unsigned(hart_sleep_count) < 2 then
-          else
+          if CORE_STATE(SINGLE_HART_MODE) = '1' then
             set_branch_condition_ID <= '1';
             Immediate               <= UJ_immediate(instr_word_ID);
           end if;
 
         when JALR =>       -- JALR instruction
-          if unsigned(hart_sleep_count) < 2 then  -- only when two threads are sleeping we will need to stall
-          else
+          if CORE_STATE(SINGLE_HART_MODE) = '1' then
             if absolute_jump(harc_ID) = '0' then
               jalr_stall <= '1';
             end if;
@@ -838,7 +832,7 @@ begin
             if branch_instr = '0' then
               branch_stall <= '1';
             end if;
-          elsif unsigned(hart_sleep_count) < 2 then -- means we have 0 threads or 1 thread sleeping
+          elsif CORE_STATE(SINGLE_HART_MODE) = '0' then -- means we have 0 threads or 1 thread sleeping
             null;
           else
             if instr_word_ID(31) = '1' then -- branch prediction taken
@@ -867,7 +861,7 @@ begin
        flush_hart_ID(harc_ID) = '0' and
        flush_decode(harc_ID)  = '0' and
 --       served_irq(harc_ID)             = '0' and
-       unsigned(hart_sleep_count) /= 0 then  -- AAA if an IRQ wakes all sleeping harts in the same cycle, the harc_sleep will be zero, but there might still be a data dep for 1 instr between ID and IE stages
+       CORE_STATE(IMT_MODE) = '0' then
   
       case OPCODE_wires is
 
@@ -949,14 +943,9 @@ begin
     elsif rising_edge(clk_i) then
       if fetch_stage_en = 1 then
         if instr_rvalid_ID_int = '1' then
-          --if busy_ID = '1' then
-          --  if valid_buf_lat(harc_ID)(rs1(instr_word_ID)) = '0' then
-          --    data_dependency_JALR <= '1';  -- AAA change the names to bypass_rs1, bypass_rs2, and bypass_rd_read 
-          --  end if;
-          --else
             if valid_buf(harc_FETCH)(rs1(instr_word_FETCH))     = '0' or   -- if the valid_bit of the operand to be read is '0', then JALR read an incorrect return address
-               valid_buf_lat(harc_FETCH)(rs1(instr_word_FETCH)) = '0' then -- even if the valid_bit_lat was '0', JALR still didnt read a correct return address.
-              data_dependency_JALR <= '1';  -- AAA change the names to bypass_rs1, bypass_rs2, and bypass_rd_read 
+               valid_buf_lat(harc_FETCH)(rs1(instr_word_FETCH)) = '0' then -- even if the valid_bit_lat was '0', JALR still didnt read a correct value.
+              data_dependency_JALR <= '1';
             elsif busy_ID = '0' then
               data_dependency_JALR <= '0';
             end if;
@@ -1035,11 +1024,10 @@ begin
 
   data_dep_checker_comb : process(all)
   begin
-    data_dependency       <= '0';
-    data_dependency_rs1   <= '0';
-    data_dependency_rs2   <= '0';
-    data_dependency_rd    <= '0';
-    --if instr_rvalid_ID_int = '1' and flush_hart_ID(harc_ID) = '0' and flush_decode(harc_ID) = '0' then --and served_irq(harc_ID) = '0' then
+    data_dependency   <= '0';
+    bypass_rs1        <= '0';
+    bypass_rs2        <= '0';
+    bypass_rd_read    <= '0';
     if instr_rvalid_ID_int = '1' and flush_decode(harc_ID) = '0' then
       if valid_buf(harc_ID)(rs1(instr_word_ID)) = '0' and rs1_valid = '1' then
         data_dependency <= '1';
@@ -1054,26 +1042,26 @@ begin
       end if;
       --if fetch_stage_en = 0 then
         if valid_buf_lat(harc_ID)(rs1(instr_word_ID)) = '0' and rs1_valid = '1' then
-          data_dependency_rs1 <= '1';  -- AAA change the names to bypass_rs1, bypass_rs2, and bypass_rd_read 
+          bypass_rs1 <= '1';
         end if; 
         if valid_buf_lat(harc_ID)(rs2(instr_word_ID)) = '0' and rs2_valid = '1' then
-          data_dependency_rs2 <= '1';
+          bypass_rs2 <= '1';
         end if;
         if accl_en = 1 then
           if valid_buf_lat(harc_ID)(rd(instr_word_ID)) = '0' and rd_read_valid = '1' then
-            data_dependency_rd <= '1';
+            bypass_rd_read <= '1';
           end if;
         end if;
       --elsif fetch_stage_en = 1 then
       --  if rf_rs1_valid(harc_ID) = '0' and rs1_valid = '1' then
-      --    data_dependency_rs1 <= '1';  -- AAA change the names to bypass_rs1, bypass_rs2, and bypass_rd_read 
+      --    bypass_rs1 <= '1';
       --  end if; 
       --  if rf_rs2_valid(harc_ID) = '0' and rs2_valid = '1' then
-      --    data_dependency_rs2 <= '1';
+      --    bypass_rs2 <= '1';
       --  end if;
       --  if accl_en = 1 then
       --    if rf_rd_read_valid(harc_ID) = '0' and rd_read_valid = '1' then
-      --      data_dependency_rd <= '1';
+      --      bypass_rd_read <= '1';
       --    end if;
       --  end if;
       --end if;
@@ -1083,7 +1071,7 @@ begin
   end generate; -- morph_en = 1
 
   -- set these internal signals to zero since the logic for them will be handled in the fetch stage
-  fetcj_stage_dis : if fetch_stage_en = 1 generate
+  fetch_stg_en : if fetch_stage_en = 1 generate
 
     branch_handler_comb : process(all)  -- comb process
       variable OPCODE_wires  : std_logic_vector (6 downto 0);
@@ -1101,11 +1089,10 @@ begin
         --flush_hart_ID(harc_ID) = '0' and
         flush_decode(harc_ID)  = '0' and
         --served_irq(harc_ID)             = '0' and
-        unsigned(hart_sleep_count) /= 0 then
+        CORE_STATE(IMT_MODE) = '0' then
 
         if decoded_branching_instr(JAL_FETCH_instr) = '1' then
-          -- AAA chnge all these to thread_pool_baseline-1
-          if unsigned(hart_sleep_count_ID) = 1 then
+          if CORE_STATE_ID(DUAL_HART_MODE) = '1' then
             set_branch_condition_ID <= '1';
             Immediate               <= UJ_immediate(instr_word_ID);
           end if;
@@ -1115,7 +1102,8 @@ begin
           if branch_predict_en = 0 then
             null;
           elsif btb_en = 0 then
-            if unsigned(harc_sleep) = 1 then -- means we have 0 threads or 1 thread sleeping
+            if unsigned(harc_sleep) = 1 then -- AAA this is wrong and should use hart_sleep_count instead -- means we have 0 threads or 1 thread sleeping
+            --if CORE_STATE(DUAL_HART_MODE) = '1' then -- means we have 1 thread sleeping
               if instr_word_ID(31) = '1' then -- branch prediction taken
                 set_branch_condition_ID      <= '1';
                 branch_predict_taken_IE_wire <= '1';
@@ -1140,15 +1128,15 @@ begin
     branch_stall            <= '0';
     jalr_stall              <= '0';
 
-  end generate;
+  end generate; -- fetch_stage_en = 1
 
   Dependency_handling_dis : if morph_en = 0 generate
-    data_dependency         <= '0';
-    data_dependency_rs1     <= '0';
-    data_dependency_rs2     <= '0';
-    data_dependency_rd      <= '0';
-    branch_stall            <= '0';
-    jalr_stall              <= '0';
+    data_dependency  <= '0';
+    bypass_rs1       <= '0';
+    bypass_rs2       <= '0';
+    bypass_rd_read   <= '0';
+    branch_stall     <= '0';
+    jalr_stall       <= '0';
   end generate;
 
   instr_rvalid_ID_int <= instr_rvalid_ID or instr_rvalid_ID_int_lat when instr_rvalid_IE = '0' else instr_rvalid_ID;
@@ -1191,8 +1179,8 @@ begin
     ls_parallel_exec  <= '0' when (OPCODE_wires = LOAD or OPCODE_wires = STORE or OPCODE_wires = AMO or OPCODE_wires = KMEM) and busy_LS = '1' and instr_rvalid_ID_int = '1' else '1';
     dsp_parallel_exec <= '0' when (OPCODE_wires = KMEM or OPCODE_wires = AMO) and busy_DSP(harc_ID_to_DSP) = '1' and instr_rvalid_ID_int = '1' else '1';
     dsp_to_jump_wire  <= '1' when OPCODE_wires = KDSP and busy_DSP(harc_ID_to_DSP) = '1' else '0';
-    busy_ID <= '0';  -- wait for a valid instruction or process the instruction       
-    --if core_busy_IE = '1' or core_busy_LS = '1' or ls_parallel_exec = '0'  or dsp_parallel_exec = '0'  or data_dependency = '1' or branch_stall = '1' or jalr_stall = '1' then
+    busy_ID <= '0';  -- wait for a valid instruction or process the instruction 
+    -- A data deoendency is only valid to make a stall when the current dependent instruction is not flushed 
     if core_busy_IE = '1' or core_busy_LS = '1' or ls_parallel_exec = '0'  or dsp_parallel_exec = '0'  or (data_dependency = '1' and flush_hart_ID(harc_ID) = '0') or branch_stall = '1' or jalr_stall = '1' then
       busy_ID <= '1';  -- wait for the stall to finish, block new instructions
     end if; 
@@ -1208,7 +1196,8 @@ begin
     ls_parallel_exec  <= '0' when busy_LS = '1' and instr_rvalid_ID_int = '1' else '1';
     dsp_parallel_exec <= '0' when unsigned(busy_DSP) /= 0 and instr_rvalid_ID_int = '1' else '1';
     dsp_to_jump_wire  <= '1' when OPCODE_wires = KDSP and busy_DSP(harc_ID_to_DSP) = '1' else '0';
-    if core_busy_IE = '1' or core_busy_LS = '1' or ls_parallel_exec = '0'  or dsp_parallel_exec = '0' or (data_dependency = '1' and flush_hart_ID(harc_ID) = '0') or branch_stall = '1' or jalr_stall = '1' then -- AAA check if they are still needed !
+    -- A data deoendency is only valid to make a stall when the current dependent instruction is not flushed
+    if core_busy_IE = '1' or core_busy_LS = '1' or ls_parallel_exec = '0'  or dsp_parallel_exec = '0' or (data_dependency = '1' and flush_hart_ID(harc_ID) = '0') or branch_stall = '1' or jalr_stall = '1' then
       busy_ID <= '1';  -- wait for the stall to finish, block new instructions 
     end if; 
   end process;
@@ -1217,8 +1206,7 @@ begin
   process(all)
   begin
     dsp_instr_req_wire <= (others => '0');
-
-    if instr_rvalid_ID_int = '1' and busy_ID = '0' then -- AAA add the conditions above 
+    if instr_rvalid_ID_int = '1' and busy_ID = '0' then
       if OPCODE(instr_word_ID) = KDSP then
         if dsp_to_jump_wire = '0' then
           if flush_hart_ID(harc_ID) = '0' then
@@ -1227,7 +1215,7 @@ begin
         end if;
       end if;
     end if;
-  end process;--------------------------------------------------------------------------------
+  end process; --------------------------------------------------------------------------------
 
   process(clk_i, rst_ni)
   begin

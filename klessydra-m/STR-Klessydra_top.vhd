@@ -51,7 +51,7 @@ entity klessydra_m_core is
     morph_en              : natural := 1;   -- Enables the generation of the logic that allows processor to morph from an IMT to a single core processor
     fetch_stage_en        : natural := 1;   -- Enables the generation of a fetch stage buffer, else the incoming instrution will go directly to the decode stage.
     branch_predict_en     : natural := 1;   -- This enables the branch predictor
-    btb_en                : natural := 0;   -- Enables the BTB instead of the single bit predictor
+    btb_en                : natural := 1;   -- Enables the BTB instead of the single bit predictor
     btb_len               : natural := 6;   -- Indicates the number of entries in the btb which is 2^btb_len
     superscalar_exec_en   : natural := 1;   -- Enables superscalar execution when set to 1, else the stall of the pipeline will depend on tha latency of the instruction
     accl_en               : natural := 0;   -- Enables the generation of the general purpose accelerator
@@ -260,6 +260,24 @@ architecture Klessydra_M of klessydra_m_core is
 
   signal halt_update     : std_logic_vector(harc_range);
 
+  signal hart_sleep_count        : std_logic_vector(TPS_CEIL-1 downto 0); -- number of sleeping harts
+  signal hart_sleep_count_wire   : std_logic_vector(TPS_CEIL-1 downto 0);
+  signal CORE_STATE              : std_logic_vector(THREAD_POOL_BASELINE downto 0);
+  signal ACTIVE_HARTS            : natural;
+
+  -- This function increments all the bits in a std_logic_vector
+  function add_vect_bits(v: std_logic_vector) return natural is
+    variable h: natural;
+  begin
+    h := 0;
+    for i in v'range loop
+      if v(i) = '1' then
+        h := h + 1;
+      end if;
+    end loop;
+    return h;
+  end function add_vect_bits;
+
   component Program_Counter
   generic (
     THREAD_POOL_SIZE                  : natural;
@@ -304,6 +322,7 @@ architecture Klessydra_M of klessydra_m_core is
     irq_pending                       : out std_logic_vector(harc_range);
     harc_sleep_wire                   : out std_logic_vector(harc_range);
     harc_sleep                        : out std_logic_vector(harc_range);
+    CORE_STATE                        : in  std_logic_vector(THREAD_POOL_BASELINE downto 0);
     halt_update                       : in  std_logic_vector(harc_range);
     PC_offset_ID                      : in  std_logic_vector(31 downto 0);
     set_branch_condition_ID           : in  std_logic;
@@ -487,6 +506,7 @@ architecture Klessydra_M of klessydra_m_core is
     jalr_addr_FETCH            : out std_logic_vector(31 downto 0);
     harc_sleep_wire            : in  std_logic_vector(harc_range);
     harc_sleep                 : in  std_logic_vector(harc_range);
+    CORE_STATE                 : in  std_logic_vector(THREAD_POOL_BASELINE downto 0);
     halt_update                : out std_logic_vector(harc_range);
 
     -- clock, reset active low, test enable
@@ -519,6 +539,25 @@ architecture Klessydra_M of klessydra_m_core is
 ----------------------- ARCHITECTURE BEGIN -------------------------------------------------------              
 begin
 
+  hart_sleep_count_wire <= std_logic_vector(to_unsigned(add_vect_bits(harc_sleep_wire),TPS_CEIL));
+  ACTIVE_HARTS          <= THREAD_POOL_SIZE - to_integer(unsigned(hart_sleep_count_wire));
+
+  process(clk_i, rst_ni)
+  begin
+    if rst_ni = '0' then
+      hart_sleep_count <= (others => '0');
+      CORE_STATE       <= '1' & (0 to THREAD_POOL_BASELINE-1 => '0');
+    elsif rising_edge(clk_i) then
+      hart_sleep_count <= hart_sleep_count_wire;
+      CORE_STATE       <= (others => '0');
+      if ACTIVE_HARTS >= THREAD_POOL_BASELINE then
+        CORE_STATE(IMT_MODE)     <= '1';
+      else
+        CORE_STATE(ACTIVE_HARTS) <= '1';
+      end if;
+    end if;
+  end process;
+
   assert (LUTRAM_RF /= debug_en and LUTRAM_RF /= 1) report "Debug-Unit cannot read from a LUTRAM regfile." severity WARNING;
 
   instr_addr_o <= pc_IF;
@@ -535,7 +574,7 @@ begin
   begin
     if rst_ni = '0' then
     elsif rising_edge(clk_i) then
-      pc_except_value <= pc_except_value_wire;  -- AAA verify if it is working for DSP and LSU (not verified yet)
+      pc_except_value <= pc_except_value_wire;
     end if;
   end process;
 
@@ -586,6 +625,7 @@ begin
       irq_pending                 => irq_pending,
       harc_sleep_wire             => harc_sleep_wire,
       harc_sleep                  => harc_sleep,
+      CORE_STATE                  => CORE_STATE,
       halt_update                 => halt_update,
       PC_offset_ID                => PC_offset_ID,
       set_branch_condition_ID     => set_branch_condition_ID,
@@ -767,6 +807,7 @@ begin
       jalr_addr_FETCH            => jalr_addr_FETCH,
       harc_sleep_wire            => harc_sleep_wire,
       harc_sleep                 => harc_sleep,
+      CORE_STATE                 => CORE_STATE,
       halt_update                => halt_update,
       clk_i                      => clk_i,
       rst_ni                     => rst_ni,

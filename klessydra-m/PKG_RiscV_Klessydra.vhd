@@ -30,7 +30,6 @@ package riscv_klessydra is
 
   file file_handler2 : text open write_mode is "execution_2.txt";
 
-
 ------------------------------------------------------------------------------------------------------------
 --   ██████╗██╗   ██╗███████╗████████╗ ██████╗ ███╗   ███╗    ████████╗██╗   ██╗██████╗ ███████╗███████╗  --
 --  ██╔════╝██║   ██║██╔════╝╚══██╔══╝██╔═══██╗████╗ ████║    ╚══██╔══╝╚██╗ ██╔╝██╔══██╗██╔════╝██╔════╝  --
@@ -56,11 +55,16 @@ package riscv_klessydra is
   constant dsp_halt_hart           : std_logic_vector(1 downto 0) := "01";
   constant dsp_exec                : std_logic_vector(1 downto 0) := "10";
 
+  constant THREAD_POOL_BASELINE    : integer := 3; 
   constant THREAD_ID_SIZE          : integer := 4;
   constant NOP_POOL_SIZE           : integer := 2;
   constant BRANCHING_DELAY_SLOT    : integer := 3;
   --constant HARC_SIZE               : integer := THREAD_POOL_SIZE;
 
+  constant SLEEP_MODE       : natural := 0;
+  constant SINGLE_HART_MODE : natural := 1;
+  constant DUAL_HART_MODE   : natural := 2;
+  constant IMT_MODE         : natural := THREAD_POOL_BASELINE;
 
 -------------------------------------------------------------------------------------------------
 --  ███████╗██╗  ██╗███████╗ ██████╗    ██████╗ ███████╗███████╗██╗███╗   ██╗███████╗███████╗  --

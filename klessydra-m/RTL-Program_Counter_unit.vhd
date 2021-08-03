@@ -66,6 +66,7 @@ entity Program_Counter is
     irq_pending                       : out std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     harc_sleep_wire                   : out std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     harc_sleep                        : out std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
+    CORE_STATE                        : in  std_logic_vector(THREAD_POOL_BASELINE downto 0);
     halt_update                       : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     PC_offset_ID                      : in  std_logic_vector(31 downto 0);
     set_branch_condition_ID           : in  std_logic;
@@ -89,6 +90,8 @@ architecture PC of Program_counter is
 
   subtype harc_range is natural range THREAD_POOL_SIZE-1 downto 0;
   subtype accl_range is integer range ACCL_NUM-1 downto 0;
+
+  signal reset_state                           : std_logic;
 
   -- pc updater signals
   signal pc_update_enable                      : std_logic_vector(harc_range);
@@ -252,7 +255,7 @@ begin
         end if;
       end loop;
       if harc_sleep_wire = (harc_range => '0') then
-        halt_en <= (others => '1'); -- AAA this maybe needed to be of index (i)
+        halt_en <= (others => '1');
       end if;
     end if;
   end process;
@@ -286,7 +289,7 @@ begin
             exit;
           end if;
         else  -- underflow condition
-          if harc_sleep(harc_IF_internal-i+THREAD_POOL_SIZE) = '0' then -- loop back checking th first from the top
+          if harc_sleep(harc_IF_internal-i+THREAD_POOL_SIZE) = '0' then -- loop back checking the first hart from the top
             harc_IF_internal_wire <= harc_IF_internal-i+THREAD_POOL_SIZE; -- go to the next non sleeping hart
             exit;
           end if;
@@ -295,9 +298,10 @@ begin
     end if;
   end process;
 
-  pc_IF <= pc(harc_IF_internal) when harc_sleep = (harc_range => '0') else pc_wire(harc_IF_internal);
+  --pc_IF <= pc(harc_IF_internal) when harc_sleep = (harc_range => '0') else pc_wire(harc_IF_internal);
+  pc_IF <= pc(harc_IF_internal) when CORE_STATE(IMT_MODE) = '1' else pc_wire(harc_IF_internal);
 
-  end generate;
+  end generate; -- morph_en = 1
 
   sleep_logic_dis : if morph_en = 0 generate
 
@@ -306,17 +310,21 @@ begin
     hardware_context_counter : process(all)
     begin
       if rst_ni = '0' then
-        harc_IF_internal <= THREAD_POOL_SIZE -1;
+        harc_IF_internal <= THREAD_POOL_SIZE-1;
       elsif rising_edge(clk_i) then
         if instr_gnt_i = '1' then
-          harc_IF_internal <= harc_IF_internal - 1 when harc_IF_internal > 0 else THREAD_POOL_SIZE -1;
+          if harc_IF_internal > 0 then
+            harc_IF_internal <= harc_IF_internal-1;
+          else 
+            harc_IF_internal <= THREAD_POOL_SIZE-1;
+          end if;
         end if;
       end if;
     end process hardware_context_counter;
 
     pc_IF <= pc(harc_IF_internal);
 
-  end generate;
+  end generate; -- morph_en = 0
 
   ----------------------------------------------------------------------------------------------
   -- this part of logic and registers is replicated as many times as the supported threads:   --
@@ -391,7 +399,11 @@ begin
         served_dsp_except_condition_lat(h)   <= '0';
         served_except_condition_lat(h)       <= '0';
         served_mret_condition_lat(h)         <= '0';
+        reset_state                          <= '1';
       elsif rising_edge(clk_i) then
+        if fetch_enable_i then
+          reset_state <= '0';
+        end if;
         pc(h)                                   <= pc_wire(h);
         taken_branch_pc_pending_internal_lat(h) <= taken_branch_pc_pending_internal(h);
         taken_branch_pending_internal_lat(h)    <= taken_branch_pending_internal(h);
@@ -415,36 +427,38 @@ begin
       served_except_condition(h)          <= served_except_condition_lat(h);
       served_mret_condition(h)            <= served_mret_condition_lat(h);
 
-      pc_update(
-        fetch_enable_i,
-        MTVEC(h),
-        instr_gnt_i,
-        taken_branch_replicated(h),
-        set_branch_condition_ID_replicated(h),
-        branch_FETCH_replicated(h),
-        jump_FETCH_replicated(h),
-        jalr_FETCH_replicated(h),
-        set_wfi_condition,
-        taken_branch_pending_internal(h), 
-        taken_branch_pending_internal_lat(h),
-        irq_pending_internal(h),
-        ie_except_condition_replicated(h),
-        ls_except_condition_replicated(h), 
-        dsp_except_condition_replicated(h),
-        set_except_condition_replicated(h), 
-        set_mret_condition_replicated(h), 
-        pc_wire(h), 
-        taken_branch_addr_internal(h), 
-        taken_branch_pc_pending_internal(h),
-        taken_branch_pc_pending_internal_lat(h), 
-        incremented_pc_internal(h), 
-        pc_update_enable(h), 
-        served_ie_except_condition(h), 
-        served_ls_except_condition(h),
-        served_dsp_except_condition(h), 
-        served_except_condition(h), 
-        served_mret_condition(h)
-      );
+      if (not reset_state) then
+        pc_update(
+          fetch_enable_i,
+          MTVEC(h),
+          instr_gnt_i,
+          taken_branch_replicated(h),
+          set_branch_condition_ID_replicated(h),
+          branch_FETCH_replicated(h),
+          jump_FETCH_replicated(h),
+          jalr_FETCH_replicated(h),
+          set_wfi_condition,
+          taken_branch_pending_internal(h), 
+          taken_branch_pending_internal_lat(h),
+          irq_pending_internal(h),
+          ie_except_condition_replicated(h),
+          ls_except_condition_replicated(h), 
+          dsp_except_condition_replicated(h),
+          set_except_condition_replicated(h), 
+          set_mret_condition_replicated(h), 
+          pc_wire(h), 
+          taken_branch_addr_internal(h), 
+          taken_branch_pc_pending_internal(h),
+          taken_branch_pc_pending_internal_lat(h), 
+          incremented_pc_internal(h), 
+          pc_update_enable(h), 
+          served_ie_except_condition(h), 
+          served_ls_except_condition(h),
+          served_dsp_except_condition(h), 
+          served_except_condition(h), 
+          served_mret_condition(h)
+        );
+      end if;
     end process;
 
   end generate pc_update_logic;
