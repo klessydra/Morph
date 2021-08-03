@@ -32,7 +32,7 @@ module tb;
   parameter  USE_KLESSYDRA_T0_2TH = 0;
   parameter  USE_KLESSYDRA_T0_3TH = 0;
   parameter  USE_KLESSYDRA_T1_3TH = 0;
-  parameter  USE_KLESSYDRA_T2_M   = 0;
+  parameter  USE_KLESSYDRA_M      = 0;
   parameter  USE_KLESSYDRA_S1     = 0;
   parameter  USE_KLESSYDRA_OOO    = 0;
   parameter  USE_KLESSYDRA_F0_3TH = 0;
@@ -152,6 +152,7 @@ module tb;
     .USE_KLESSYDRA_T0_2TH    ( USE_KLESSYDRA_T0_2TH ),
     .USE_KLESSYDRA_T0_3TH    ( USE_KLESSYDRA_T0_3TH ),
     .USE_KLESSYDRA_T1_3TH    ( USE_KLESSYDRA_T1_3TH ),
+    .USE_KLESSYDRA_M         ( USE_KLESSYDRA_M ),
     .USE_KLESSYDRA_S1        ( USE_KLESSYDRA_S1     ),
     .USE_KLESSYDRA_OOO       ( USE_KLESSYDRA_OOO    ),
     .USE_KLESSYDRA_F0_3TH    ( USE_KLESSYDRA_F0_3TH ),
@@ -417,8 +418,6 @@ module tb;
         spi_master.send(0, {>>{8'h38}});
       end
     end
-
-
 
     // end of computation
     if (~gpio_out[8])

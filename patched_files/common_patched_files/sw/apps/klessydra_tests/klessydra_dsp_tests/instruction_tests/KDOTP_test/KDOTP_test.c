@@ -5,7 +5,10 @@
 #include "functions.h"
 #include "klessydra_defs.h"
 
-#define NumOfThreads 3
+#ifndef THREAD_POOL_SIZE
+	#define THREAD_POOL_SIZE 3
+#endif
+
 #define scalar_size 4 
 
 #ifndef NumOfElements
@@ -32,7 +35,8 @@ int result8[scalar_size], result16[scalar_size], result32[scalar_size];
 int size8=NumOfElements*sizeof(char);
 int size16=NumOfElements*sizeof(short);
 int size32=NumOfElements*sizeof(int);
-int testperf[NumOfThreads], perf8[NumOfThreads], perf16[NumOfThreads], perf32[NumOfThreads];
+int perf8[THREAD_POOL_SIZE], perf16[THREAD_POOL_SIZE], perf32[THREAD_POOL_SIZE];
+int testperf[3];  // Contains the non-accelerated performance for 8-bit, 16-bit, and 32-bit tests
 
 int power(int a,int b);
 
@@ -79,13 +83,13 @@ int main()
 			:
 			:[dsp_perf8] "r" (dsp_perf8), [dsp_ptr_perf8] "r" (dsp_ptr_perf8)
 			);
-	if (Klessydra_get_coreID()==0) {perf8[0]=dsp_perf8; } //printf("Speed: %d Cycles\n", perf8[0]);}
-	if (Klessydra_get_coreID()==1) {perf8[1]=dsp_perf8; }//printf("Speed: %d Cycles\n", perf8[1]);}
-	if (Klessydra_get_coreID()==2) {perf8[2]=dsp_perf8; } //printf("Speed: %d Cycles\n", perf8[2]);}
+	for (int i=0; i<THREAD_POOL_SIZE; i++) {
+		if (Klessydra_get_coreID()==i) perf8[i]=dsp_perf8; //printf("Speed: %d Cycles\n", perf8[0]);}
+	}
 	//------------------------------------------------------------------------------------------
 
 	// Test 8-bit dot-product result -----------------------------------------------------------
-	if (Klessydra_get_coreID()==1)
+	if (Klessydra_get_coreID()==0)
 	{
 		__asm__( "csrrw zero, 0x7A0, 0x00000001;");
 		for (int i=0; i<NumOfElements; i++)
@@ -134,13 +138,13 @@ int main()
 			:
 			:[dsp_perf16] "r" (dsp_perf16), [dsp_ptr_perf16] "r" (dsp_ptr_perf16)
 			);
-	if (Klessydra_get_coreID()==0) perf16[0]=dsp_perf16;
-	if (Klessydra_get_coreID()==1) perf16[1]=dsp_perf16;
-	if (Klessydra_get_coreID()==2) perf16[2]=dsp_perf16;
+	for (int i=0; i<THREAD_POOL_SIZE; i++) {
+		if (Klessydra_get_coreID()==i) perf16[i]=dsp_perf16; //printf("Speed: %d Cycles\n", perf8[0]);}
+	}
 	//------------------------------------------------------------------------------------------
 
 	// Test 16-bit dot-product result ----------------------------------------------------------
-	if (Klessydra_get_coreID()==1)
+	if (Klessydra_get_coreID()==0)
 	{
 		__asm__( "csrrw zero, 0x7A0, 0x00000001;");
 		for (int i=0; i<NumOfElements; i++)
@@ -190,13 +194,14 @@ int main()
 			:
 			:[dsp_perf32] "r" (dsp_perf32), [dsp_ptr_perf32] "r" (dsp_ptr_perf32)
 			);
-	if (Klessydra_get_coreID()==0) perf32[0]=dsp_perf32;
-	if (Klessydra_get_coreID()==1) perf32[1]=dsp_perf32;
-	if (Klessydra_get_coreID()==2) perf32[2]=dsp_perf32;
+
+	for (int i=0; i<THREAD_POOL_SIZE; i++) {
+		if (Klessydra_get_coreID()==i) perf32[i]=dsp_perf32; //printf("Speed: %d Cycles\n", perf8[0]);}
+	}
 	//------------------------------------------------------------------------------------------
 	
 	// Test 32-bit dot-product result ----------------------------------------------------------
-	if (Klessydra_get_coreID()==1)
+	if (Klessydra_get_coreID()==0)
 	{
 		__asm__( "csrrw zero, 0x7A0, 0x00000001;");
 		for (int i=0; i<NumOfElements; i++)
@@ -225,18 +230,18 @@ int main()
 	
 	/************************************ 32-bit DOTP END *************************************/
 	
-	if (Klessydra_get_coreID()==1)
+	if (Klessydra_get_coreID()==0)
 	{		
 		printf("\nNumber of Elements: %d\n",NumOfElements);
-		for(int i=0;i<3;i++)
+		for(int i=0;i<THREAD_POOL_SIZE;i++)
 		{
 				printf("Th%d KDOTP8  Speed: %d Cycles\n",i, perf8[i]);
 		}
-		for(int i=0;i<3;i++)
+		for(int i=0;i<THREAD_POOL_SIZE;i++)
 		{
 				printf("Th%d KDOTP16 Speed: %d Cycles\n",i, perf16[i]);
 		}
-		for(int i=0;i<3;i++)
+		for(int i=0;i<THREAD_POOL_SIZE;i++)
 		{
 				printf("Th%d KDOTP32 Speed: %d Cycles\n",i, perf32[i]);
 		}
@@ -258,7 +263,7 @@ int main()
 	goto VECT_DOTP_32;
 	FAIL_VECT_DOTP_32: 
 	printf("\nFAILED KDOTP32 32-bit vector dot product\n");
-	if (Klessydra_get_coreID()==1)
+	if (Klessydra_get_coreID()==0)
 	{		
 		printf("\nNumber of Elements: %d\n\n",NumOfElements);
 	}
@@ -271,7 +276,7 @@ int power(int a,int b)
 	int i=0,pow_int=1;
 	for(i=0;i<b;i++)
 	{
-	 pow_int=pow_int*a;
+		pow_int=pow_int*a;
 	}
 	return pow_int;
 }

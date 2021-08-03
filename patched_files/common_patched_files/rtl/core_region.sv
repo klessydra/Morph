@@ -29,7 +29,7 @@ module core_region
     parameter USE_KLESSYDRA_T0_2TH = 0,
     parameter USE_KLESSYDRA_T0_3TH = 0,
     parameter USE_KLESSYDRA_T1_3TH = 0,
-    parameter USE_KLESSYDRA_T2_M   = 0,
+    parameter USE_KLESSYDRA_M      = 0,
     parameter USE_KLESSYDRA_S1     = 0,
     parameter USE_KLESSYDRA_OOO    = 0,
     parameter USE_KLESSYDRA_F0_3TH = 0,
@@ -470,8 +470,8 @@ module core_region
         .ext_perf_counters_i (               )
       );
 
-  end else if (USE_KLESSYDRA_T2_M) begin: CORE
-      klessydra_t2_m_core
+  end else if (USE_KLESSYDRA_M) begin: CORE
+      klessydra_m_core
       #(
         .THREAD_POOL_SIZE        (KLESS_THREAD_POOL_SIZE),
         .LUTRAM_RF               (KLESS_LUTRAM_RF),
@@ -1032,7 +1032,8 @@ if (USE_KLESSYDRA_T13X_NETLIST) begin : mem_gen_net
     .be_i         ( data_mem_be    ),
     .bypass_en_i  ( testmode_i     )
   );
-  end else begin : mem_gen
+end 
+else begin : mem_gen
   sp_ram_wrap
   #(
     .RAM_SIZE   ( DATA_RAM_SIZE  ),

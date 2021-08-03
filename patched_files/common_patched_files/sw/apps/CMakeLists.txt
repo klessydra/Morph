@@ -39,7 +39,7 @@ macro(add_application NAME SOURCE_FILES)
   endif()
   
 
-  add_definitions(${KLESS_DEFINES})
+  add_definitions(${KLESS_DEFINES} ${COREMARK_DEFS})
   add_executable(${NAME}.elf $<TARGET_OBJECTS:crt0> ${SOURCE_FILES})
 
   # set subdirectory for add_executable
@@ -76,7 +76,7 @@ macro(add_application NAME SOURCE_FILES)
 
   # link libraries
   if(${USE_KLESSYDRA_TEST})
-    if (${USE_KLESSYDRA_T1_3TH} OR ${USE_KLESSYDRA_T13X_NETLIST} OR ${USE_KLESSYDRA_OoO})
+    if (${USE_KLESSYDRA_M} OR ${USE_KLESSYDRA_T1_3TH} OR ${USE_KLESSYDRA_T13X_NETLIST} OR ${USE_KLESSYDRA_OoO} OR ${USE_KLESSYDRA_S1})
       target_link_libraries(${NAME}.elf ${ARG_LIBS} ${ARDUINO_SEP} ${ARDUINO_CORE} ${BEEBS_LIB_NAME} kless_dsp_libs kless_libs bench ${MATH_FNS_LIB} string sys m)
     else()
       target_link_libraries(${NAME}.elf ${ARG_LIBS} ${ARDUINO_SEP} ${ARDUINO_CORE} ${BEEBS_LIB_NAME} kless_libs bench ${MATH_FNS_LIB} string sys m)
@@ -103,6 +103,7 @@ macro(add_application NAME SOURCE_FILES)
   add_custom_command(TARGET ${NAME}.read
     POST_BUILD
     COMMAND ${CMAKE_OBJDUMP} ${CMAKE_OBJDUMP_FLAGS} $<TARGET_FILE:${NAME}.elf> > ${NAME}.read
+    COMMAND cp ${NAME}.read ${CMAKE_BINARY_DIR}/test.dump
     WORKING_DIRECTORY ./${SUBDIR}
     DEPENDS ${NAME}.elf)
 

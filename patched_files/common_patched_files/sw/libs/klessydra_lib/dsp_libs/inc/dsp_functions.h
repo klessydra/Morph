@@ -2,7 +2,10 @@
 #include "klessydra_defs.h"
 
 #define MHARTID_IDCORE_MASK 15
-#define THREAD_POOL_SIZE 4
+
+#ifndef THREAD_POOL_SIZE
+	#define THREAD_POOL_SIZE 4
+#endif
 
 /*
 If the user adds more scratchpad in the rtl, he must define more scratchpads belwo i.e. spmaddrE, spmaddrF etc..
@@ -106,7 +109,7 @@ __attribute__ ((always_inline)) inline int kmemstr(void* rd, void* rs1, int rs2)
 		"kmemstr %[rd], %[rs1], %[rs2];"
 		://no output register
 		:[rd] "r" (rd), [rs1] "r" (rs1), [rs2] "r" (rs2)
-		:/*no clobbered registers*/
+		:"memory"
 	);
 	
 	return rs2;

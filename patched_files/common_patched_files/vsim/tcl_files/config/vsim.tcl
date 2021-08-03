@@ -3,7 +3,6 @@ source tcl_files/config/vsim_ips.tcl
 set cmd "vsim -quiet $TB \
    -vopt \
   -L pulpino_lib \
-  -L simprims_ver \
   $VSIM_IP_LIBS \
   +nowarnTRAN \
   +nowarnTSCALE \
@@ -12,7 +11,7 @@ set cmd "vsim -quiet $TB \
   -gUSE_KLESSYDRA_T0_2TH=$env(USE_KLESSYDRA_T0_2TH) \
   -gUSE_KLESSYDRA_T0_3TH=$env(USE_KLESSYDRA_T0_3TH) \
   -gUSE_KLESSYDRA_T1_3TH=$env(USE_KLESSYDRA_T1_3TH) \
-  -gUSE_KLESSYDRA_T2_M=$env(USE_KLESSYDRA_T2_M) \
+  -gUSE_KLESSYDRA_M=$env(USE_KLESSYDRA_M) \
   -gUSE_KLESSYDRA_S1=$env(USE_KLESSYDRA_S1) \
   -gUSE_KLESSYDRA_OoO=$env(USE_KLESSYDRA_OoO) \
   -gUSE_KLESSYDRA_F0_3TH=$env(USE_KLESSYDRA_F0_3TH) \

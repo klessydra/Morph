@@ -2,7 +2,9 @@
 #include "klessydra_defs.h"
 
 #define MHARTID_IDCORE_MASK 15
-#define THREAD_POOL_SIZE 4
+#ifndef THREAD_POOL_SIZE
+	#define THREAD_POOL_SIZE 4
+#endif
 
 int barrier_completed[THREAD_POOL_SIZE]; 
 int arrived_at_barrier[THREAD_POOL_SIZE];
