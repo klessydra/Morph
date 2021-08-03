@@ -15,9 +15,9 @@ setenv IPS_PATH ${PULP_PATH}/ips
 source ${PULP_PATH}/vsim/vcompile/colors.csh
 
 echo ""
-echo "${Green}--> Compiling klessydra-s1 core... ${NC}"
+echo "${Green}--> Compiling klessydra-m core... ${NC}"
 
-source ${PULP_PATH}/vsim/vcompile/ips/vcompile_klessydra-s1.csh || exit 1
+source ${PULP_PATH}/vsim/vcompile/ips/vcompile_klessydra-m.csh || exit 1
 
-echo "${Green}--> klessydra-s1 core compilation Complete! ${NC}"
+echo "${Green}--> klessydra-m core compilation Complete! ${NC}"
 echo ""

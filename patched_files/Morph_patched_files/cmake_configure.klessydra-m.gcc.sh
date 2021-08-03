@@ -19,8 +19,8 @@ then
 	USE_KLESSYDRA_T0_2TH=0 # if you are using klessydra-t0-2th (The three pipeline version of klessydra t0), set this to 1
 	USE_KLESSYDRA_T0_3TH=0 # if you are using klessydra-t0-3th (The four pipeline version of klessydra t0), set this to 1
 	USE_KLESSYDRA_T1_3TH=0 # if you are using klessydra-t1-3th (The four pipeline version of klessydra t1), set this to 1CV
-	USE_KLESSYDRA_T2_M=0   # if you are using klessydra-t2-m (A hart morphing version of klessydra T1), set this to 1CV
-	USE_KLESSYDRA_S1=1     # if you are using klessydra-s1 (Single hart version of klessydra t1), set this to 1CV
+	USE_KLESSYDRA_M=1   # if you are using klessydra-m (A hart morphing version of klessydra T1), set this to 1CV
+	USE_KLESSYDRA_S1=0     # if you are using klessydra-s1 (Single hart version of klessydra t1), set this to 1CV
 	USE_KLESSYDRA_OoO=0    # if you are using klessydra-t1-3th (The four pipeline version of klessydra t1), set this to 1CV
 	USE_KLESSYDRA_F0_3TH=0 # if you are using klessydra-f0-3th (The four pipeline version of klessydra f0), set this to 1
 	USE_KLESSYDRA_T13X_NETLIST=0 # if you are using klessydra-t1-3th (The four pipeline version of klessydra t1), set this to 1
@@ -35,7 +35,7 @@ then
 	#  -------------------------------------------------------------------------------------------------------------------------------------------
 
 	#--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-	KLESS_THREAD_POOL_SIZE=1        # Changing the TPS to less than "number of pipeline stages-1" is not allowed. And making it bigger than "pipeline stages-1" is okay but not recommended
+	KLESS_THREAD_POOL_SIZE=3        # Changing the TPS to less than "number of pipeline stages-1" is not allowed. And making it bigger than "pipeline stages-1" is okay but not recommended
 	KLESS_LUTRAM_RF=0 				# Changes the regfile from flip-flop type into BRAM type
 	KLESS_RV32E=0                   # Regfile size, Can be set to 32 for RV32E being 0 else 16 for RV32E being set to 1, also chnges the RISCV compiler and Klessydra startup file accordingly
 	KLESS_RV32M=1                   # Enable the M-extension of the risc-v instruction set
@@ -50,7 +50,7 @@ then
 	KLESS_MCYCLE_EN=1               # Can be set to 1 or 0 only. Setting to zero will disable MCYCLE and MCYCLEH
 	KLESS_MINSTRET_EN=1             # Can be set to 1 or 0 only. Setting to zero will disable MINSTRET and MINSTRETH
 	KLESS_MHPMCOUNTER_EN=1          # Can be set to 1 or 0 only. Setting to zero will disable all performance counters except "MCYCLE/H" and "MINSTRET/H"
-	KLESS_count_all=0               # Perfomance counters count for all the harts instead of there own hart
+	KLESS_count_all=1               # Perfomance counters count for all the harts instead of there own hart
 	KLESS_debug_en=1                # Generates the debug unit
 	KLESS_tracer_en=1				# Generate the instruction tracer used only for debugging purposes
     #  -------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -80,8 +80,10 @@ then
 
 	FM_Size=32       				 # Defines the size of the Feature Maps in the convolution tests (can only be multiples of 2, FMs > 32 are not tested)
 	Filter_Size=3   				 # Defines the size of the Filters in the convolution tests (can only be 3,5,7,9,11)
-	VSIZE=8 		 				 # Defines the vector size used in the instruction verification klessydra T13 tests
+	VSIZE=1 		 				 # Defines the vector size used in the instruction verification klessydra T13 tests
 	TIME=$(( RANDOM % 2147483647))   # Defines the time used for random generation in different tests
+
+	COREMARK_ITR=1					 # Defines the number of iterations ran by coremark
 
 	file=test
 fi
@@ -198,6 +200,9 @@ KLESS_VSIZE="-DNumOfElements="$VSIZE
 echo '--' KLESS_VSIZE=$VSIZE
 KLESS_TIME="-DTIME="$TIME
 echo '--' KLESS_TIME=$TIME
+TPS="-DTHREAD_POOL_SIZE="$KLESS_THREAD_POOL_SIZE
+
+COREMARK_ITR="-DITERATIONS="$COREMARK_ITR
 
 #compile arduino lib
 ARDUINO_LIB=1
@@ -207,8 +212,10 @@ SIM_DIRECTORY="$PULP_GIT_DIRECTORY/vsim"
 #insert here your post-layout netlist if you are using IMPERIO
 PL_NETLIST=""
 
+
 cmake "$PULP_GIT_DIRECTORY"/sw/ \
 	-DNETLIST_FILE="$file" \
+	-DTPS="$TPS" \
 	-DNUMOFELEMENTS="$KLESS_VSIZE" \
 	-DTIME="$KLESS_TIME" \
 	-DA_ORDER="$A_ORDER" \
@@ -221,13 +228,14 @@ cmake "$PULP_GIT_DIRECTORY"/sw/ \
     -DCMAKE_C_COMPILER="$COMPILER" \
     -DVSIM="$VSIM" \
     -DRVC="$RVC" \
+    -DITERATIONS="$COREMARK_ITR" \
     -DRISCY_RV32F="$RISCY_RV32F" \
     -DUSE_KLESSYDRA="$USE_KLESSYDRA" \
     -DUSE_KLESSYDRA_TEST="$USE_KLESSYDRA_TEST" \
     -DUSE_KLESSYDRA_T0_2TH="$USE_KLESSYDRA_T0_2TH" \
     -DUSE_KLESSYDRA_T0_3TH="$USE_KLESSYDRA_T0_3TH" \
     -DUSE_KLESSYDRA_T1_3TH="$USE_KLESSYDRA_T1_3TH" \
-    -DUSE_KLESSYDRA_T2_M="$USE_KLESSYDRA_T2_M" \
+    -DUSE_KLESSYDRA_M="$USE_KLESSYDRA_M" \
     -DUSE_KLESSYDRA_S1="$USE_KLESSYDRA_S1" \
     -DUSE_KLESSYDRA_OoO="$USE_KLESSYDRA_OoO" \
 	-DUSE_KLESSYDRA_F0_3TH="$USE_KLESSYDRA_F0_3TH" \

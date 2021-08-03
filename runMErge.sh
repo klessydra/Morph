@@ -41,16 +41,16 @@ then
 	export PULP_PATH
 
 	# common patched files
-	cp -r $KLESS_PATH/klessydra-t2-m $PULP_PATH/ips
+	cp -r $KLESS_PATH/klessydra-m $PULP_PATH/ips
 	cp -r $KLESS_PATH/patched_files/common_patched_files/sw		$PULP_PATH/
 	cp -r $KLESS_PATH/patched_files/common_patched_files/ips	$PULP_PATH/
 	cp -r $KLESS_PATH/patched_files/common_patched_files/rtl	$PULP_PATH/
 	cp -r $KLESS_PATH/patched_files/common_patched_files/tb		$PULP_PATH/
 	cp -r $KLESS_PATH/patched_files/common_patched_files/vsim	$PULP_PATH/
 
-	# S1 patched files
-	cp -f $KLESS_PATH/patched_files/t2m_patched_files/cmake_configure.klessydra-t2m.gcc.sh $PULP_PATH/sw
-	cp -f $KLESS_PATH/patched_files/t2m_patched_files/vcompile_klessydra-t2m.csh $PULP_PATH/vsim/vcompile
+	# Morph patched files
+	cp -f $KLESS_PATH/patched_files/Morph_patched_files/cmake_configure.klessydra-m.gcc.sh $PULP_PATH/sw
+	cp -f $KLESS_PATH/patched_files/Morph_patched_files/vcompile_klessydra-m.csh $PULP_PATH/vsim/vcompile
 
 fi
 
