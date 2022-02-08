@@ -1,6 +1,6 @@
 <img src="/pics/Klessydra_Logo.png" width="400">
 
-# KLESSYDRA-T2M MORPHING PROCESSOR
+# KLESSYDRA-M MORPHING PROCESSOR
 
 Intro: The Klessydra processing core family is a set of processors featuring full compliance with RISC-V, and pin-to-pin compatible with the PULPino Riscy cores. Klessydra-T2M is a bare-metal 32-bit morphing processor fully supporting the RV32IM from the RISC-V ISA, and one instruction from the Atomic "A" extension. 'T2M' further extends the instruction set with a set of custom vector instructions.
 
