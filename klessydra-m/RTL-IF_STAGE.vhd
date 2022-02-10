@@ -40,6 +40,8 @@ entity IF_STAGE is
     harc_sleep                 : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     CORE_STATE                 : in  std_logic_vector(THREAD_POOL_BASELINE downto 0);
     CORE_STATE_FETCH           : out std_logic_vector(THREAD_POOL_BASELINE downto 0);
+    block_input_inst_wire      : in  std_logic;
+    block_input_inst           : in  std_logic;
     served_irq                 : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     flush_decode               : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     harc_FETCH                 : out natural range THREAD_POOL_SIZE-1 downto 0;
@@ -75,7 +77,8 @@ entity IF_STAGE is
     -- program memory interface
     instr_req_o                : out std_logic;
     instr_gnt_i                : in  std_logic;
-    instr_rdata_i              : in  std_logic_vector(31 downto 0)
+    instr_rdata_i              : in  std_logic_vector(31 downto 0);
+    core_enable_i              : in  std_logic
     );
 end entity;  ------------------------------------------
 
@@ -90,7 +93,6 @@ architecture FETCH of IF_STAGE is
   signal instr_word_ID_int       : std_logic_vector(31 downto 0);
   signal instr_word_ID_lat       : std_logic_vector(31 downto 0);
   signal pc_FETCH                : std_logic_vector(31 downto 0);
-  signal instr_rvalid_state      : std_logic;
   signal instr_rvalid_FETCH_lat  : std_logic;
   signal instr_rvalid_FETCH      : std_logic;
   signal instr_rvalid_ID_int     : std_logic;
@@ -178,11 +180,11 @@ begin
   begin
     if rising_edge(clk_i) then
       halt_update_FETCH <= (others => '0');
-      if instr_gnt_i = '1' then
+      if instr_gnt_i = '1' and block_input_inst_wire = '0' then
         pc_ID   <= pc_IF;
         harc_ID <= harc_IF;
       end if;
-      if instr_rvalid_i = '1' then 
+      if instr_rvalid_i = '1' and block_input_inst = '0' then 
         instr_word_ID_lat <= instr_rdata_i;
       end if;
     end if;
@@ -193,8 +195,8 @@ begin
   branch_predict_taken_ID    <= '0';
   CORE_STATE_FETCH           <= CORE_STATE;
 
-  instr_rvalid_ID <= instr_rvalid_i;
-  instr_word_ID   <= instr_rdata_i when instr_rvalid_i = '1' else instr_word_ID_lat;
+  instr_rvalid_ID <= instr_rvalid_i  and not block_input_inst;
+  instr_word_ID   <= instr_rdata_i when (instr_rvalid_i = '1' and block_input_inst = '0') else instr_word_ID_lat;
 
 
   end generate;
@@ -217,13 +219,13 @@ begin
     instr_word_FETCH <= instr_word_FETCH_lat;
     if CORE_STATE(IMT_MODE) = '1' and instr_rvalid_ID_int = '0' then  -- if all harts are asleep and there is no more valid instr pushed from the FETCH stage (i.e. instr_rvalid_ID_int = '0'), we will switch back
       instr_rvalid_ID <= instr_rvalid_i;
-      if instr_rvalid_i = '1' then
+      if instr_rvalid_i = '1' and block_input_inst = '0' then -- block_input_inst is only active in the heterogeneous cluster
         instr_word_ID <= instr_rdata_i;
       end if;
     else
       instr_rvalid_ID <= instr_rvalid_ID_int; -- AAA change the name of this signal "instr_rvalid_ID_int" because it already exists in the ID stage
       instr_word_ID   <= instr_word_ID_int;
-      if instr_rvalid_i = '1' then
+      if instr_rvalid_i = '1' and block_input_inst = '0' then
         instr_word_FETCH <= instr_rdata_i;
       end if;
     end if;
@@ -255,7 +257,8 @@ begin
            flush_hart_FETCH(harc_FETCH) = '0' and   -- no branch flush 
            flush_fetch(harc_FETCH)      = '0' and   -- no ID stage flush
            served_irq(harc_FETCH)       = '0' and   -- no IRQ served flush
-           busy_ID                      = '0' then  -- no ID stage stall
+           busy_ID                      = '0' and   -- no ID stage stall
+           block_input_inst             = '0' then  -- no block of input from another core  
           instr_rvalid_ID_int    <= '1'; -- AAA change the name of instr_rvalid_ID_int as it conflicts with ano ther intrnal signal in the ID stage
           instr_word_ID_int      <= instr_word_FETCH;
           pc_ID                  <= pc_FETCH;
@@ -269,7 +272,7 @@ begin
         end if;
       end if;
       -- signals that are triggered by instr_gnt_i read harc_sleep_wire
-      if instr_gnt_i = '1' then
+      if instr_gnt_i = '1' and block_input_inst_wire = '0' then
         if CORE_STATE(IMT_MODE) = '1' and instr_rvalid_FETCH = '0' then
           pc_ID      <= pc_IF;
           harc_ID    <= harc_IF;
@@ -277,7 +280,7 @@ begin
         pc_FETCH   <= pc_IF;
         harc_FETCH <= harc_IF;
       end if;
-      if instr_rvalid_i = '1' then
+      if instr_rvalid_i = '1' and block_input_inst = '0' then
         instr_word_FETCH_lat <= instr_rdata_i;
       end if;
     end if;

@@ -61,10 +61,10 @@ package riscv_klessydra is
   constant BRANCHING_DELAY_SLOT    : integer := 3;
   --constant HARC_SIZE               : integer := THREAD_POOL_SIZE;
 
-  constant SLEEP_MODE       : natural := 0;
-  constant SINGLE_HART_MODE : natural := 1;
-  constant DUAL_HART_MODE   : natural := 2;
-  constant IMT_MODE         : natural := THREAD_POOL_BASELINE;
+  constant SLEEP_MODE              : natural := 0;
+  constant SINGLE_HART_MODE        : natural := 1;
+  constant DUAL_HART_MODE          : natural := 2;
+  constant IMT_MODE                : natural := THREAD_POOL_BASELINE;
 
 -------------------------------------------------------------------------------------------------
 --  ███████╗██╗  ██╗███████╗ ██████╗    ██████╗ ███████╗███████╗██╗███╗   ██╗███████╗███████╗  --
@@ -351,11 +351,11 @@ package riscv_klessydra is
   constant MHPMEVENT30_addr   : std_logic_vector (11 downto 0) := x"33E";
   constant MHPMEVENT31_addr   : std_logic_vector (11 downto 0) := x"33F";
   -- Custom Klessydra CSR addresses
-  constant MPSCLFAC_addr      : std_logic_vector (11 downto 0) := x"BE0";
-  constant MVSIZE_addr        : std_logic_vector (11 downto 0) := x"BF0";
-  constant MVTYPE_addr        : std_logic_vector (11 downto 0) := x"BF8";
-
-
+  constant MPSCLFAC_addr      : std_logic_vector (11 downto 0) := x"BE0";  -- custom CSR registers
+  constant MVSIZE_addr        : std_logic_vector (11 downto 0) := x"BF0";  -- custom CSR registers
+  constant MVTYPE_addr        : std_logic_vector (11 downto 0) := x"BF8";  -- custom CSR registers
+  constant MBHARTID_addr      : std_logic_vector (11 downto 0) := x"FC4";  -- custom CSR registers
+  constant MPIP_addr          : std_logic_vector (11 downto 0) := x"FC8";  -- custom CSR registers
   -- reset values of CSR Registers
   constant MTVEC_RESET_VALUE    : std_logic_vector(31 downto 0)          := x"00000094";
   constant PCER_RESET_VALUE     : std_logic_vector(31 downto 0)          := x"00000000";
@@ -551,7 +551,7 @@ package riscv_klessydra is
   constant SCRATCHPAD_OVERFLOW_EXCEPT_CODE   : std_logic_vector(31 downto 0) := x"00000102"; -- Custom codes
   constant READ_SAME_SCARTCHPAD_EXCEPT_CODE  : std_logic_vector(31 downto 0) := x"00000103"; -- Custom codes
   constant WRITE_SAME_SCARTCHPAD_EXCEPT_CODE : std_logic_vector(31 downto 0) := x"00000104"; -- Custom codes
-
+  constant CTX_SWITCH_CODE                   : std_logic_vector(31 downto 0) := x"00000110"; -- Custom codes
 
 ----------------------------------------------------------------------------------
 --  ███████╗██╗   ██╗███╗   ██╗ ██████╗████████╗██╗ ██████╗ ███╗   ██╗███████╗  --

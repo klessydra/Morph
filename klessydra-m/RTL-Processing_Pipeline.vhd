@@ -24,10 +24,12 @@ use work.riscv_klessydra.all;
 -- pipeline  pinout --------------------
 entity Pipeline is
   generic(
+    THREAD_POOL_SIZE_GLOBAL    : natural;
     THREAD_POOL_SIZE           : natural;
     LUTRAM_RF                  : natural;
     RV32E                      : natural;
     RV32M                      : natural;
+    context_switch             : natural;
     morph_en                   : natural;
     fetch_stage_en             : natural;
     branch_predict_en          : natural;
@@ -69,9 +71,14 @@ entity Pipeline is
     MVSIZE                     : in  array_2d(THREAD_POOL_SIZE-1 downto 0)(Addr_Width downto 0);
     MVTYPE                     : in  array_2d(THREAD_POOL_SIZE-1 downto 0)(3 downto 0);
     MPSCLFAC                   : in  array_2d(THREAD_POOL_SIZE-1 downto 0)(4 downto 0);
+    MHARTID                    : in  array_2d(THREAD_POOL_SIZE-1 downto 0)(9  downto 0);
     MSTATUS                    : in  array_2d(THREAD_POOL_SIZE-1 downto 0)(1 downto 0);
+    MPIP                       : in  array_2d(THREAD_POOL_SIZE-1 downto 0)(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
     PCER                       : in  array_2d(THREAD_POOL_SIZE-1 downto 0)(31 downto 0);
+    block_input_inst_wire      : in  std_logic;
+    block_input_inst           : in  std_logic;
     served_irq                 : out std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
+    served_pending_irq         : out std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     WFI_Instr                  : out std_logic;
     misaligned_err             : out std_logic;
     pc_ID                      : out std_logic_vector(31 downto 0);
@@ -102,7 +109,7 @@ entity Pipeline is
     harc_FETCH                 : out natural range THREAD_POOL_SIZE-1 downto 0;
     harc_ID                    : out natural range THREAD_POOL_SIZE-1 downto 0;
     harc_EXEC                  : out natural range THREAD_POOL_SIZE-1 downto 0;
-    harc_to_csr                : out natural range THREAD_POOL_SIZE-1 downto 0;
+    harc_to_csr                : out natural range THREAD_POOL_SIZE_GLOBAL-1 downto 0;
     instr_word_IE              : out std_logic_vector(31 downto 0);
     PC_offset                  : out std_logic_vector(31 downto 0);
     absolute_address           : out std_logic_vector(31 downto 0);
@@ -120,7 +127,10 @@ entity Pipeline is
     jalr_addr_FETCH            : out std_logic_vector(31 downto 0);
     harc_sleep_wire            : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     harc_sleep                 : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
+    wfi_hart_wire              : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     CORE_STATE                 : in  std_logic_vector(THREAD_POOL_BASELINE downto 0);
+    IMT_ACTIVE_HARTS           : in  natural;
+    HET_CLUSTER_S1_CORE        : in  std_logic;
     halt_update                : out std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
 
     -- clock, reset active low, test enable
@@ -145,7 +155,15 @@ entity Pipeline is
     irq_i                      : in  std_logic;
     -- miscellanous control signals
     fetch_enable_i             : in  std_logic;
-    core_busy_o                : out std_logic
+    core_busy_o                : out std_logic;
+    -- klessydra-specific signals
+    core_enable_i              : in  std_logic;
+    source_hartid_o            : out natural range THREAD_POOL_SIZE_GLOBAL-1 downto 0;
+    sw_irq_i                   : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
+    sw_irq_o                   : out std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
+    sw_irq_served_i            : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
+    sw_irq_served_o            : out std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
+    sw_irq_pending             : out std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0)
   );
   end entity;  ------------------------------------------
 
@@ -382,6 +400,8 @@ architecture Pipe of Pipeline is
     harc_sleep                 : in  std_logic_vector(harc_range);
     CORE_STATE                 : in  std_logic_vector(THREAD_POOL_BASELINE downto 0);
     CORE_STATE_FETCH           : out std_logic_vector(THREAD_POOL_BASELINE downto 0);
+    block_input_inst_wire      : in  std_logic;
+    block_input_inst           : in  std_logic;
     served_irq                 : in  std_logic_vector(harc_range);
     flush_decode               : in  std_logic_vector(harc_range);
     harc_IF                    : in  natural range THREAD_POOL_SIZE-1 downto 0;
@@ -418,7 +438,8 @@ architecture Pipe of Pipeline is
     -- program memory interface
     instr_req_o                : out std_logic;
     instr_gnt_i                : in  std_logic;
-    instr_rdata_i              : in  std_logic_vector(31 downto 0)
+    instr_rdata_i              : in  std_logic_vector(31 downto 0);
+    core_enable_i              : in  std_logic
   );
   end component; --------------------------------------------------
 
@@ -623,7 +644,9 @@ architecture Pipe of Pipeline is
 
   component IE_STAGE is
   generic(
+    THREAD_POOL_SIZE_GLOBAL   : natural;
     THREAD_POOL_SIZE          : natural;
+    context_switch            : natural;
     morph_en                  : natural;
     fetch_stage_en            : natural; 
     branch_predict_en         : natural;
@@ -636,6 +659,12 @@ architecture Pipe of Pipeline is
     clk_i, rst_ni             : in  std_logic;
     instr_gnt_i               : in  std_logic;
     irq_i                     : in  std_logic;
+    source_hartid_o           : out natural range THREAD_POOL_SIZE_GLOBAL-1 downto 0;
+    sw_irq_i                  : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
+    sw_irq_o                  : out std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
+    sw_irq_served_i           : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
+    sw_irq_served_o           : out std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
+    sw_irq_pending            : out std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
     RS1_Data_IE               : in  std_logic_vector(31 downto 0);
     RS2_Data_IE               : in  std_logic_vector(31 downto 0);
     irq_pending               : in  std_logic_vector(harc_range);
@@ -659,7 +688,9 @@ architecture Pipe of Pipeline is
     pass_BGE                  : in  std_logic;
     pass_BGEU                 : in  std_logic;
     ie_instr_req              : in  std_logic;
+    MHARTID                   : in  array_2d(harc_range)(9 downto 0);
     MSTATUS                   : in  array_2d(harc_range)(1 downto 0);
+    MPIP                      : in  array_2d(harc_range)(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
     harc_EXEC                 : in  natural range THREAD_POOL_SIZE-1 downto 0;
     instr_rvalid_IE           : in  std_logic;  -- validity bit at IE input
     WB_EN_next_ID             : in  std_logic;
@@ -668,13 +699,17 @@ architecture Pipe of Pipeline is
     decoded_instruction_IE    : in  std_logic_vector(EXEC_UNIT_INSTR_SET_SIZE-1 downto 0);
     harc_sleep_wire           : in  std_logic_vector(harc_range);
     harc_sleep                : in  std_logic_vector(harc_range);
+    wfi_hart_wire             : in  std_logic_vector(harc_range);
+    core_enable_i             : in  std_logic;
     CORE_STATE                : in  std_logic_vector(THREAD_POOL_BASELINE downto 0);
     CORE_STATE_ID             : in  std_logic_vector(THREAD_POOL_BASELINE downto 0);
+    IMT_ACTIVE_HARTS          : in  natural;
+    HET_CLUSTER_S1_CORE       : in  std_logic;
     csr_addr_i                : out std_logic_vector(11 downto 0);
     ie_except_data            : out std_logic_vector(31 downto 0);
     ie_csr_wdata_i            : out std_logic_vector(31 downto 0);
     csr_op_i                  : out std_logic_vector(2 downto 0);
-    harc_to_csr               : out natural range THREAD_POOL_SIZE-1 downto 0;
+    harc_to_csr               : out natural range THREAD_POOL_SIZE_GLOBAL-1 downto 0;
     csr_instr_req             : out std_logic;
     core_busy_IE              : out std_logic;
     jump_instr                : out std_logic;
@@ -691,6 +726,7 @@ architecture Pipe of Pipeline is
     PC_offset                 : out std_logic_vector(31 downto 0);
     absolute_address          : out std_logic_vector(31 downto 0);
     served_irq                : out std_logic_vector(harc_range);
+    served_pending_irq        : out std_logic_vector(harc_range);
     ebreak_instr              : out std_logic;
     absolute_jump             : out std_logic_vector(harc_range);
     instr_word_IE_WB          : out std_logic_vector (31 downto 0);
@@ -954,6 +990,8 @@ begin
     harc_sleep                 => harc_sleep,
     CORE_STATE                 => CORE_STATE,
     CORE_STATE_FETCH           => CORE_STATE_FETCH,
+    block_input_inst_wire      => block_input_inst_wire,
+    block_input_inst           => block_input_inst,
     served_irq                 => served_irq,
     flush_decode               => flush_decode,
     harc_FETCH                 => harc_FETCH,
@@ -986,7 +1024,8 @@ begin
     rst_ni                     => rst_ni,
     instr_req_o                => instr_req_o,      
     instr_gnt_i                => instr_gnt_i,
-    instr_rdata_i              => instr_rdata_i
+    instr_rdata_i              => instr_rdata_i,
+    core_enable_i              => core_enable_i
     );
 
   DECODE : ID_STAGE
@@ -1177,7 +1216,9 @@ begin
 
   EXECUTE : IE_STAGE
   generic map(
+    THREAD_POOL_SIZE_GLOBAL    => THREAD_POOL_SIZE_GLOBAL,
     THREAD_POOL_SIZE           => THREAD_POOL_SIZE,
+    context_switch             => context_switch,
     morph_en                   => morph_en,
     fetch_stage_en             => fetch_stage_en,
     branch_predict_en          => branch_predict_en, 
@@ -1190,6 +1231,12 @@ begin
     rst_ni                     => rst_ni,
     instr_gnt_i                => instr_gnt_i,
     irq_i                      => irq_i,
+    source_hartid_o            => source_hartid_o,
+    sw_irq_i                   => sw_irq_i, 
+    sw_irq_o                   => sw_irq_o, 
+    sw_irq_served_i            => sw_irq_served_i, 
+    sw_irq_served_o            => sw_irq_served_o,
+    sw_irq_pending             => sw_irq_pending,
     RS1_Data_IE                => RS1_Data_IE,
     RS2_Data_IE                => RS2_Data_IE,
     irq_pending                => irq_pending,
@@ -1213,7 +1260,9 @@ begin
     pass_BGE                   => pass_BGE,
     pass_BGEU                  => pass_BGEU,
     ie_instr_req               => ie_instr_req,
+    MHARTID                    => MHARTID,
     MSTATUS                    => MSTATUS,
+    MPIP                       => MPIP,
     harc_EXEC                  => harc_EXEC,
     instr_rvalid_IE            => instr_rvalid_IE,
     WB_EN_next_ID              => WB_EN_next_ID,
@@ -1222,8 +1271,12 @@ begin
     decoded_instruction_IE     => decoded_instruction_IE,
     harc_sleep_wire            => harc_sleep_wire,
     harc_sleep                 => harc_sleep,
+    wfi_hart_wire              => wfi_hart_wire,
+    core_enable_i              => core_enable_i,
     CORE_STATE                 => CORE_STATE,
     CORE_STATE_ID              => CORE_STATE_ID,
+    IMT_ACTIVE_HARTS           => IMT_ACTIVE_HARTS,
+    HET_CLUSTER_S1_CORE        => HET_CLUSTER_S1_CORE,
     csr_addr_i                 => csr_addr_i,
     ie_except_data             => ie_except_data,
     ie_csr_wdata_i             => ie_csr_wdata_i,
@@ -1245,6 +1298,7 @@ begin
     PC_offset                  => PC_offset,
     absolute_address           => absolute_address,
     served_irq                 => served_irq,
+    served_pending_irq         => served_pending_irq,
     ebreak_instr               => ebreak_instr,
     absolute_jump              => absolute_jump,
     instr_word_IE_WB           => instr_word_IE_WB,

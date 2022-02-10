@@ -231,6 +231,7 @@ begin
           --  ╚══════╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝╚══════╝     ╚═════╝ ╚═╝       --
           -----------------------------------------------------------------------
 
+            -- AAA better not let sw_mip instructions make writes to address 0xFF00 or 0xFE00
             if store_op = '1' or amo_store = '1' or (amo_load_skip = '1' and halt_LSU = '0') then	
               if ((data_addr_internal(1 downto 0) = "00" and data_width_ID = "10") or 
                   (data_addr_internal(0)          = '0'  and data_width_ID = "01") or

@@ -1,0 +1,21 @@
+fpu:
+  incdirs: [
+    .,
+  ]
+  files: [
+    klessydra-m/PKG_RiscV_Klessydra.vhd,
+    klessydra-m/RTL-Accumulator.vhd,
+    klessydra-m/RTL-CSR_Unit.vhd,
+    klessydra-m/RTL-Debug_Unit.vhd,
+    klessydra-m/RTL-DSP_Unit.vhd,
+    klessydra-m/RTL-ID_STAGE.vhd,
+    klessydra-m/RTL-IE_STAGE.vhd,
+    klessydra-m/RTL-IF_STAGE.vhd,
+    klessydra-m/RTL-Load_Store_Unit.vhd,
+    klessydra-m/RTL-Processing_Pipeline.vhd,
+    klessydra-m/RTL-Program_Counter_unit.vhd,
+    klessydra-m/RTL-Registerfile.vhd,
+    klessydra-m/RTL-Scratchpad_Memory_Interface.vhd,
+    klessydra-m/RTL-Scratchpad_Memory.vhd,
+    klessydra-m/STR-Klessydra_top.vhd
+  ]

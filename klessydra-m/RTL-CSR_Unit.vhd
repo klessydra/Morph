@@ -29,16 +29,18 @@ use work.riscv_klessydra.all;
 
 entity CSR_Unit is
   generic (
-    THREAD_POOL_SIZE      : natural;
-    ACCL_NUM              : natural;
-    Addr_Width            : natural;
-    replicate_accl_en     : natural;
-    accl_en               : natural;
-    MCYCLE_EN             : natural;
-    MINSTRET_EN           : natural;
-    MHPMCOUNTER_EN        : natural;
-    RF_CEIL               : natural;
-    count_all             : natural
+    THREAD_POOL_SIZE_GLOBAL : natural;
+    THREAD_POOL_SIZE        : natural;
+    ACCL_NUM                : natural;
+    Addr_Width              : natural;
+    replicate_accl_en       : natural;
+    accl_en                 : natural;
+    MCYCLE_EN               : natural;
+    MINSTRET_EN             : natural;
+    MHPMCOUNTER_EN          : natural;
+    RF_CEIL                 : natural;
+    TPS_GLBL_CEIL           : natural;
+    count_all               : natural
   );
   port (
     pc_IE                       : in  std_logic_vector(31 downto 0);
@@ -50,13 +52,15 @@ entity CSR_Unit is
     served_dsp_except_condition : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     harc_sleep                  : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     harc_EXEC                   : in  natural range THREAD_POOL_SIZE-1 downto 0;
-    harc_to_csr                 : in  natural range THREAD_POOL_SIZE-1 downto 0;
+    harc_to_csr                 : in  natural range THREAD_POOL_SIZE_GLOBAL-1 downto 0;
     instr_word_IE               : in  std_logic_vector(31 downto 0);
     served_except_condition     : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     served_mret_condition       : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     served_irq                  : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
+    served_pending_irq          : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     pc_except_value_wire        : in  array_2d(THREAD_POOL_SIZE-1 downto 0)(31 downto 0);
     data_addr_internal          : in  std_logic_vector(31 downto 0);
+    HET_CLUSTER_S1_CORE         : in  std_logic;
     jump_instr                  : in  std_logic;
     branch_instr                : in  std_logic;
     set_branch_condition        : in  std_logic;
@@ -72,15 +76,18 @@ entity CSR_Unit is
     MVSIZE                      : out array_2d(THREAD_POOL_SIZE-1 downto 0)(Addr_Width downto 0); 
     MVTYPE                      : out array_2d(THREAD_POOL_SIZE-1 downto 0)(3 downto 0); -- CSR Size follows the RVV standard
     MPSCLFAC                    : out array_2d(THREAD_POOL_SIZE-1 downto 0)(4 downto 0);
+    MHARTID                     : out array_2d(THREAD_POOL_SIZE-1 downto 0)(9 downto 0);  -- AAA adjust the size of mhartID
     MSTATUS                     : out array_2d(THREAD_POOL_SIZE-1 downto 0)(1 downto 0);
     MEPC                        : out array_2d(THREAD_POOL_SIZE-1 downto 0)(31 downto 0);
     MCAUSE                      : out array_2d(THREAD_POOL_SIZE-1 downto 0)(31 downto 0);
     MIP                         : out array_2d(THREAD_POOL_SIZE-1 downto 0)(31 downto 0);
+    MPIP                        : out array_2d(THREAD_POOL_SIZE-1 downto 0)(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
     MTVEC                       : out array_2d(THREAD_POOL_SIZE-1 downto 0)(31 downto 0);
     PCER                        : out array_2d(THREAD_POOL_SIZE-1 downto 0)(31 downto 0);
     fetch_enable_i              : in  std_logic;
     clk_i                       : in  std_logic;
     rst_ni                      : in  std_logic;
+    core_id_i                   : in  std_logic_vector(3 downto 0);
     cluster_id_i                : in  std_logic_vector(5 downto 0);
     instr_rvalid_i              : in  std_logic;
     instr_rvalid_IE             : in  std_logic;
@@ -90,7 +97,11 @@ entity CSR_Unit is
     irq_i                       : in  std_logic;
     irq_id_i                    : in  std_logic_vector(4 downto 0);
     irq_id_o                    : out std_logic_vector(4 downto 0);
-    irq_ack_o                   : out std_logic
+    irq_ack_o                   : out std_logic;
+    ext_sw_irq_het_core         : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
+    sw_irq                      : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
+    sw_irq_pending              : in  std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
+    source_hartid_i             : in  natural range THREAD_POOL_SIZE_GLOBAL-1 downto 0  -- AAA remember to change the size of this to 0 to TPS_GLBL_CEIL
     );
 end entity;
 
@@ -108,7 +119,7 @@ architecture CSR of CSR_Unit is
   signal MESTATUS    : array_2d(harc_range)(2  downto 0);
   signal MCPUID      : array_2d(harc_range)(8  downto 0);
   signal MIMPID      : array_2d(harc_range)(15 downto 0);
-  signal MHARTID     : array_2d(harc_range)(9  downto 0);
+  signal MBHARTID    : array_2d(harc_range)(9  downto 0);  -- AAA adjust the size of mbhartID -- backup hartID 
   signal MIRQ        : array_2d(harc_range)(31 downto 0);  -- extension, maps external irqs
   signal MBADADDR    : array_2d(harc_range)(31 downto 0);  -- misaligned address containers
 
@@ -149,7 +160,7 @@ architecture CSR of CSR_Unit is
   signal MIP_internal           : array_2d(harc_range)(31 downto 0);
   signal MTVEC_internal         : array_2d(harc_range)(31 downto 0);
   signal irq_ack_o_internal     : std_logic;
-  signal trap_hndlr         	: std_logic_vector(harc_range);
+  signal trap_hndlr             : std_logic_vector(harc_range);
 
   signal served_ie_except_condition_lat  : std_logic_vector(harc_range);
   signal served_ls_except_condition_lat  : std_logic_vector(harc_range);
@@ -187,7 +198,8 @@ begin
 
     -- hardwired read-only connections  
     -- note: MCPUID, MIMPID, MHARTID replicated only for easy coding, they return same value for all threads
-    MCPUID(h) <= std_logic_vector(to_unsigned(256, 9));  -- xx move init value in pkg
+    -- MCPUID(h) <= std_logic_vector(to_unsigned(256, 9));  -- xx move init value in pkg
+    MCPUID(h) <= "00000" & core_id_i;  -- xx move init value in pkg
     MIMPID(h) <= std_logic_vector(to_unsigned(32768, 16));  -- xx move init value in pkg
 
     -- irq request vector shifted by 2 bits, used in interrupt handler routine
@@ -195,7 +207,7 @@ begin
     pc_IE_replicated(h) <= pc_IE when harc_EXEC = h else (others =>'0');
     csr_instr_req_replicated(h) <= '1' when csr_instr_req = '1' and harc_to_csr = h else '0';
     trap_hndlr(h)               <= '1' when pc_IE_replicated(h) = MTVEC_RESET_VALUE  else '0';
-    MHARTID(h)                  <= std_logic_vector(resize(unsigned(cluster_id_i) & to_unsigned(h, THREAD_ID_SIZE), 10));
+    --MHARTID(h)                  <= std_logic_vector(resize(unsigned(cluster_id_i) & to_unsigned(h, THREAD_ID_SIZE), 10));
 
     CSR_unit_op : process(clk_i, rst_ni)  -- single cycle unit, one process, fully synchronous 
     begin
@@ -206,7 +218,10 @@ begin
           MVTYPE(h)                         <= MVTYPE_RESET_VALUE;
           MPSCLFAC(h)                       <= MPSCLFAC_RESET_VALUE;
         end if;
-        MSTATUS_internal(h)                 <= MSTATUS_RESET_VALUE;
+        MHARTID(h)                          <= std_logic_vector(resize(unsigned(core_id_i) * (THREAD_POOL_SIZE_GLOBAL- THREAD_POOL_SIZE)  + to_unsigned(h, THREAD_ID_SIZE), 10));
+        MBHARTID(h)                         <= std_logic_vector(resize(unsigned(core_id_i) * (THREAD_POOL_SIZE_GLOBAL- THREAD_POOL_SIZE)  + to_unsigned(h, THREAD_ID_SIZE), 10));
+        MPIP(h)                             <= (others => '0');
+        MSTATUS_internal(h)                 <= "01" when HET_CLUSTER_S1_CORE = '1' else MSTATUS_RESET_VALUE;
         MESTATUS(h)                         <= MESTATUS_RESET_VALUE;
         MEPC_internal(h)                    <= MEPC_RESET_VALUE;
         MCAUSE_internal(h)                  <= MCAUSE_RESET_VALUE;
@@ -279,6 +294,26 @@ begin
         else
           MIP_internal(h)(11) <= '0';       -- only harc 0 interruptible
         end if;
+        -- sw interrupt from other cores are handled here
+        if sw_irq(h) = '1' then
+          --if ext_sw_irq_het_core(h) = '0' then
+            MIP_internal(h)(3) <= '1';
+          --end if;
+          if HET_CLUSTER_S1_CORE = '1' then
+            MHARTID(h) <= std_logic_vector(to_unsigned(source_hartid_i,10)); -- AAA adjust the size of mhartID
+          end if;
+        end if;
+
+        for i in 0 to THREAD_POOL_SIZE_GLOBAL-1 loop
+          if sw_irq_pending(i) = '1' then
+            MPIP(h)(i) <= '1';
+            MPIP(h)(to_integer(unsigned(MHARTID(h)))) <= '1';
+          end if;
+        end loop;
+        if served_pending_irq(h) = '1' then
+          MPIP(h) <= (others => '0');
+        end if;
+
         -- the MIP_internal(h)(3), MSIP bit, software interrupt, is assigned above
 
         if served_irq(h) = '1' and MIP_internal(h)(11) = '1' then
@@ -292,7 +327,7 @@ begin
             MEPC_internal(h) <= pc_IE;
           end if;     
           if WFI_Instr = '1' then
-            MCAUSE_internal(h)(30) <= '1'; -- 
+            MCAUSE_internal(h)(30) <= '1';
           else
             MCAUSE_internal(h)(30) <= '0';
           end if;
@@ -452,6 +487,39 @@ begin
                       null;
                   end case;
                 end if;
+
+              when MBHARTID_addr =>      -- read only
+                case csr_op_i is
+                  when CSRRC|CSRRS|CSRRCI|CSRRSI =>
+                    if(rs1(instr_word_IE) = 0) then
+                      csr_rdata_o_replicated(h) <= (10 to 31 => '0') & MBHARTID(h);
+                    else
+                      csr_access_denied_o_replicated(h) <= '1';
+                    end if;
+                  when CSRRW|CSRRWI =>
+                    csr_access_denied_o_replicated(h) <= '1';
+                  when others =>
+                    null;
+                end case;
+
+              when MPIP_addr =>
+                case csr_op_i is
+                  when CSRRW|CSRRWI =>
+                    csr_rdata_o_replicated(h)(THREAD_POOL_SIZE_GLOBAL-1 downto 0) <= MPIP(h);
+                    MPIP(h) <= csr_wdata_i(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
+                  when CSRRS|CSRRSI =>
+                    csr_rdata_o_replicated(h)(THREAD_POOL_SIZE_GLOBAL-1 downto 0) <= MPIP(h);
+                    if(rs1(instr_word_IE) /= 0) then
+                      MPIP(h) <= MPIP(h) or csr_wdata_i(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
+                    end if;
+                  when CSRRC|CSRRCI =>
+                    csr_rdata_o_replicated(h)(THREAD_POOL_SIZE_GLOBAL-1 downto 0) <= MPIP(h);
+                    if(rs1(instr_word_IE) /= 0) then
+                      MPIP(h)<= (MPIP(h) and (not csr_wdata_i(THREAD_POOL_SIZE_GLOBAL-1 downto 0)));
+                    end if;
+                  when others =>
+                    null;
+                end case;
 
               when MSTATUS_addr =>
                 case csr_op_i is
@@ -1251,7 +1319,7 @@ begin
             irq_ack_o_internal <= '0';
           else
             irq_ack_o_internal <= '1';
-            irq_id_o       <= irq_id_i;
+            irq_id_o           <= irq_id_i;
           end if;
         when '1' =>
           irq_ack_o_internal <= '0';

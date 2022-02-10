@@ -155,6 +155,7 @@ begin
       elsif instr_rvalid_ID_int = '0' then -- wait for a valid instruction
       else  -- process the incoming instruction 
 
+        -- AAA create the bypass here for this as well
         data_addr_internal_IE <= std_logic_vector(signed(regfile(harc_ID)(rs1(instr_word_ID))) + signed(S_immediate(instr_word_ID)));
 
         ------------------------------------------------------------
@@ -245,6 +246,7 @@ begin
   begin
     if rising_edge(clk_i) then
       if RD_EN = '1' then 
+        -- AAA create the bypass here for this as well
         data_addr_internal_IE <= std_logic_vector(signed(regfile_lutram_rs1(32*harc_ID+rs1(instr_word_ID))) + signed(S_immediate(instr_word_ID)));
         RS1_Data_IE <= RS1_Data_IE_wire;
       -- pragma translate_off

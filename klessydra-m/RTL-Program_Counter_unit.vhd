@@ -24,6 +24,7 @@ use work.riscv_klessydra.all;
 
 entity Program_Counter is
   generic (
+    THREAD_POOL_SIZE_GLOBAL           : natural;
     THREAD_POOL_SIZE                  : natural;
     ACCL_NUM                          : natural;
     morph_en                          : natural
@@ -44,6 +45,7 @@ entity Program_Counter is
     set_except_condition              : in  std_logic;
     set_mret_condition                : in  std_logic;
     set_wfi_condition                 : in  std_logic;
+    HET_CLUSTER_S1_CORE               : in  std_logic;
     harc_FETCH                        : in  natural range THREAD_POOL_SIZE-1 downto 0;
     harc_ID                           : in  natural range THREAD_POOL_SIZE-1 downto 0;
     harc_EXEC                         : in  natural range THREAD_POOL_SIZE-1 downto 0;
@@ -66,7 +68,11 @@ entity Program_Counter is
     irq_pending                       : out std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     harc_sleep_wire                   : out std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     harc_sleep                        : out std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
+    wfi_hart_wire                     : out std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
+    wfi_hart                          : out std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
+    ext_sw_irq_het_core               : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     CORE_STATE                        : in  std_logic_vector(THREAD_POOL_BASELINE downto 0);
+    CORE_INACTIVE                     : in  std_logic;
     halt_update                       : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     PC_offset_ID                      : in  std_logic_vector(31 downto 0);
     set_branch_condition_ID           : in  std_logic;
@@ -79,6 +85,8 @@ entity Program_Counter is
     clk_i                             : in  std_logic;
     rst_ni                            : in  std_logic;
     irq_i                             : in  std_logic;
+    source_hartid_i                   : in  natural range THREAD_POOL_SIZE_GLOBAL-1 downto 0; -- used to overwrite the mhartID of the core doing the context switch
+    sw_irq_i                          : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     fetch_enable_i                    : in  std_logic;
     boot_addr_i                       : in  std_logic_vector(31 downto 0);
     instr_gnt_i                       : in  std_logic
@@ -115,6 +123,7 @@ architecture PC of Program_counter is
   signal harc_IF_internal_wire                 : harc_range;
   signal mret_condition_pending_internal       : std_logic_vector(harc_range);
   signal incremented_pc_internal               : array_2D(harc_range)(31 downto 0);
+  signal trap_addr                             : array_2D(harc_range)(31 downto 0);
   signal mepc_addr_internal                    : array_2D(harc_range)(31 downto 0);
   signal taken_branch_addr_internal            : array_2D(harc_range)(31 downto 0);
   signal taken_branch_pc_pending_internal      : array_2D(harc_range)(31 downto 0);
@@ -129,10 +138,6 @@ architecture PC of Program_counter is
   signal served_except_condition_lat           : std_logic_vector(harc_range);
   signal served_mret_condition_lat             : std_logic_vector(harc_range);
 
-  signal count                                 : std_logic_vector(harc_range);
-  signal count_wire                            : std_logic_vector(harc_range);
-  signal sub                                   : std_logic_vector(harc_range);
-  signal sub_wire                              : std_logic_vector(harc_range);
   signal context_switch_halt                   : std_logic_vector(harc_range);
   signal context_switch_halt_wire              : std_logic;
   signal halt_en                               : std_logic_vector(harc_range);
@@ -236,14 +241,10 @@ begin
       harc_IF_internal    <= THREAD_POOL_SIZE-1;
       harc_sleep          <= (others => '0');
       context_switch_halt <= (others => '0');
-      sub                 <= (others => '0');
-      count               <= (others => '0');
       halt_en             <= (others => '1');
     elsif rising_edge(clk_i) then
       harc_IF_internal    <= harc_IF_internal_wire;
       harc_sleep          <= harc_sleep_wire;
-      sub                 <= sub_wire;
-      count               <= count_wire;
       for i in harc_range loop
         if harc_sleep_wire(harc_EXEC) = '1' and halt_en(i) = '1' then
           if harc_EXEC /= i then 
@@ -263,11 +264,6 @@ begin
   hardware_context_counter_comb : process(all)
   begin
     harc_sleep_wire <= harc_sleep;
-    sub_wire        <= std_logic_vector(unsigned(harc_sleep_wire) - unsigned(harc_sleep));
-    count_wire      <= count;
-    if harc_sleep /= harc_sleep_wire then
-      count_wire <= std_logic_vector(unsigned(count)+1);
-    end if;
 
     if set_wfi_condition = '1' then
       harc_sleep_wire(harc_EXEC) <= '1';
@@ -307,11 +303,13 @@ begin
 
     context_switch_halt <= (others => '0');
 
-    hardware_context_counter : process(all)
+    hardware_context_counter : process(clk_i, rst_ni)
     begin
       if rst_ni = '0' then
         harc_IF_internal <= THREAD_POOL_SIZE-1;
+        wfi_hart       <= (others => '0');
       elsif rising_edge(clk_i) then
+        wfi_hart       <= wfi_hart_wire;
         if instr_gnt_i = '1' then
           if harc_IF_internal > 0 then
             harc_IF_internal <= harc_IF_internal-1;
@@ -321,6 +319,22 @@ begin
         end if;
       end if;
     end process hardware_context_counter;
+
+    process(all)
+    begin
+      wfi_hart_wire <= wfi_hart;
+      if set_wfi_condition = '1' then
+        wfi_hart_wire(harc_EXEC) <= '1';
+      end if;
+      for i in harc_range loop
+        if (MIP(i)(11) or MIP(i)(7)) = '1' then
+          wfi_hart_wire(0) <= '0';  -- Wake up hart 0 external or timer ints
+        end if;
+        if MIP(i)(3) = '1' then
+          wfi_hart_wire(i) <= '0';  -- Wake up hart i with sw ints
+        end if;
+      end loop;
+    end process;
 
     pc_IF <= pc(harc_IF_internal);
 
@@ -392,16 +406,21 @@ begin
     pc_update_sync : process (clk_i, rst_ni)
     begin
       if rst_ni = '0' then 
-        pc(h)                                <= (31 downto 8 => '0' ) & std_logic_vector( to_unsigned(128,8));
+        reset_state                          <= '1';
         taken_branch_pending_internal_lat(h) <= '0';
         served_ie_except_condition_lat(h)    <= '0';
         served_ls_except_condition_lat(h)    <= '0';
         served_dsp_except_condition_lat(h)   <= '0';
         served_except_condition_lat(h)       <= '0';
         served_mret_condition_lat(h)         <= '0';
-        reset_state                          <= '1';
+        -- The S1 core in the hetergeneous cluster does not have a reset state and takes only the state of the hart that is doing the context switch
+        if HET_CLUSTER_S1_CORE = '1' then -- sibce at reset we start execution with the T13 core
+          pc(h) <= (31 downto 8 => '0') & std_logic_vector(to_unsigned(160,8)); -- Put address 0x0000_00A0 which is the pointer to the context load instruction
+        else
+          pc(h) <= (31 downto 8 => '0') & std_logic_vector(to_unsigned(128,8)); -- Put address 0x0000_0080 which is the pointer to the reset handler
+        end if;
       elsif rising_edge(clk_i) then
-        if fetch_enable_i then
+        if fetch_enable_i = '1' then
           reset_state <= '0';
         end if;
         pc(h)                                   <= pc_wire(h);
@@ -427,37 +446,41 @@ begin
       served_except_condition(h)          <= served_except_condition_lat(h);
       served_mret_condition(h)            <= served_mret_condition_lat(h);
 
-      if (not reset_state) then
-        pc_update(
-          fetch_enable_i,
-          MTVEC(h),
-          instr_gnt_i,
-          taken_branch_replicated(h),
-          set_branch_condition_ID_replicated(h),
-          branch_FETCH_replicated(h),
-          jump_FETCH_replicated(h),
-          jalr_FETCH_replicated(h),
-          set_wfi_condition,
-          taken_branch_pending_internal(h), 
-          taken_branch_pending_internal_lat(h),
-          irq_pending_internal(h),
-          ie_except_condition_replicated(h),
-          ls_except_condition_replicated(h), 
-          dsp_except_condition_replicated(h),
-          set_except_condition_replicated(h), 
-          set_mret_condition_replicated(h), 
-          pc_wire(h), 
-          taken_branch_addr_internal(h), 
-          taken_branch_pc_pending_internal(h),
-          taken_branch_pc_pending_internal_lat(h), 
-          incremented_pc_internal(h), 
-          pc_update_enable(h), 
-          served_ie_except_condition(h), 
-          served_ls_except_condition(h),
-          served_dsp_except_condition(h), 
-          served_except_condition(h), 
-          served_mret_condition(h)
-        );
+      if ext_sw_irq_het_core(h) = '1' then
+        pc_wire(h) <= (31 downto 8 => '0') & std_logic_vector(to_unsigned(160,8)); -- Put address 0x0000_00A0 which is the pointer to the context load instruction
+      else
+        if (reset_state = '0') then
+          pc_update(
+            fetch_enable_i,
+            MTVEC(h),
+            instr_gnt_i,
+            taken_branch_replicated(h),
+            set_branch_condition_ID_replicated(h),
+            branch_FETCH_replicated(h),
+            jump_FETCH_replicated(h),
+            jalr_FETCH_replicated(h),
+            set_wfi_condition,
+            taken_branch_pending_internal(h), 
+            taken_branch_pending_internal_lat(h),
+            irq_pending_internal(h),
+            ie_except_condition_replicated(h),
+            ls_except_condition_replicated(h), 
+            dsp_except_condition_replicated(h),
+            set_except_condition_replicated(h), 
+            set_mret_condition_replicated(h), 
+            pc_wire(h), 
+            taken_branch_addr_internal(h), 
+            taken_branch_pc_pending_internal(h),
+            taken_branch_pc_pending_internal_lat(h), 
+            incremented_pc_internal(h), 
+            pc_update_enable(h), 
+            served_ie_except_condition(h), 
+            served_ls_except_condition(h),
+            served_dsp_except_condition(h), 
+            served_except_condition(h), 
+            served_mret_condition(h)
+          );
+        end if;
       end if;
     end process;
 
