@@ -146,9 +146,9 @@ architecture EXECUTE of IE_STAGE is
   signal sw_irq_count               : std_logic; -- one bit counter
 
   signal T13_switch                 : std_logic;
-  signal T13_switch_routine         : std_logic;
+  signal T13_switch_routine         : std_logic_vector(harc_range);
   signal S1_switch                  : std_logic;
-  signal S1_switch_routine          : std_logic;
+  signal S1_switch_routine          : std_logic; -- AAA maybe make this into a arc_range just like T13_switch_routine for consistancyf
   signal S1_switch_en               : std_logic;
 
   signal instr_rvalid_IE_int        : std_logic;
@@ -250,12 +250,12 @@ architecture EXECUTE of IE_STAGE is
 
 begin
 
-  T13_switch <= '1'                            when
-                context_switch       =  1      and
-                THREAD_POOL_SIZE     =  3      and
-                IMT_ACTIVE_HARTS_lat =  1      and
-                harc_EXEC = single_active_hart and
-                T13_switch_routine   = '0'     else
+  T13_switch <= '1'                                     when
+                context_switch                =  1      and
+                THREAD_POOL_SIZE              =  3      and
+                IMT_ACTIVE_HARTS_lat          =  1      and
+                harc_EXEC                     = single_active_hart and
+                T13_switch_routine(harc_EXEC) = '0'     else
                 '0';
 
   S1_switch <= '1'                      when
@@ -285,10 +285,10 @@ begin
       --instruction_counter    <= std_logic_vector(to_unsigned(0, 64));
       core_busy_IE_lat       <= '0';
       WB_EN_next_IE          <= '0';
-      T13_switch_routine     <= '0';
       S1_switch_routine      <= '0';
       S1_switch_en           <= '0';
       sw_irq_count           <= '0';
+      T13_switch_routine     <= (others => '0');
       halt_update_IE         <= (others => '0');
       halt_update_IE_pending <= (others => '0');
     elsif rising_edge(clk_i) then
@@ -323,7 +323,7 @@ begin
             -- the current valid instruction is discarded, only its pc value gets used for mepc
           elsif T13_switch = '1'  or S1_switch = '1' then
             if THREAD_POOL_SIZE > 1 then
-              T13_switch_routine <= '1';
+              T13_switch_routine(harc_EXEC) <= '1';
             end if;
             if THREAD_POOL_SIZE = 1 then
               S1_switch_routine  <= '1';
@@ -454,7 +454,7 @@ begin
 
             if decoded_instruction_IE(MRET_bit_position) = '1' then
               if THREAD_POOL_SIZE > 1 then
-                T13_switch_routine <= '0';
+                T13_switch_routine(harc_EXEC) <= '0';
               end if;
               if THREAD_POOL_SIZE = 1 then
                 S1_switch_routine  <= '0';
