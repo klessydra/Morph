@@ -603,10 +603,10 @@ begin
               when MCAUSE_addr =>
                 case csr_op_i is
                   when CSRRW|CSRRWI =>
-                    csr_rdata_o_replicated(h)  <= MCAUSE_internal(h);
-                    MCAUSE_internal(h)(31)         <= csr_wdata_i(31);
-                    MCAUSE_internal(h)(4 downto 0) <= csr_wdata_i(4 downto 0);
-                    MCAUSE_internal(h)(8) <= csr_wdata_i(8);
+                    csr_rdata_o_replicated(h)        <= MCAUSE_internal(h);
+                    MCAUSE_internal(h)(31 downto 30) <= csr_wdata_i(31 downto 30);
+                    MCAUSE_internal(h)(4 downto 0)   <= csr_wdata_i(4 downto 0);
+                    MCAUSE_internal(h)(8)            <= csr_wdata_i(8);
                   when CSRRS|CSRRSI =>
                     csr_rdata_o_replicated(h) <= MCAUSE_internal(h);
                     if(rs1(instr_word_IE) /= 0) then
