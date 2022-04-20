@@ -17,5 +17,8 @@ fpu:
     klessydra-m/RTL-Registerfile.vhd,
     klessydra-m/RTL-Scratchpad_Memory_Interface.vhd,
     klessydra-m/RTL-Scratchpad_Memory.vhd,
-    klessydra-m/STR-Klessydra_top.vhd
+    klessydra-m/RTL-VCU_Unit.vhd,
+    klessydra-m/STR-Klessydra_Core.vhd,
+    klessydra-m/STR-Klessydra_Top.vhd,
+    klessydra-m/WRP-Klessydra_Multi-Core_Wrapper.vhd
   ]
