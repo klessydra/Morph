@@ -515,17 +515,19 @@ begin
             if ((data_addr_internal_wires(1 downto 0) = "00" and data_width_ID = "10") or 
                 (data_addr_internal_wires(0)          = '0'  and data_width_ID = "01") or
                                                                  data_width_ID = "00") then
-              data_req_o_wires       := '1';
-              data_be_internal_wires := data_be_ID;
-              data_wdata_o_wires := RS2_Data_IE;		
-              if store_err = '1' then
-                ls_except_condition_wires  := '1';
-                ls_taken_branch_wires      := '1';
-              else
-                nextstate_LS <= data_valid_waiting;
-                busy_LS_wires := '1';
-                if amo_store = '1' or amo_load_skip = '1' then
-                  core_busy_LS_wires := '1';
+              if data_addr_internal_wires(31 downto 9) /= x"0000_F" & "111" then
+                data_req_o_wires       := '1';
+                data_be_internal_wires := data_be_ID;
+                data_wdata_o_wires := RS2_Data_IE;
+                if store_err = '1' then
+                  ls_except_condition_wires  := '1';
+                  ls_taken_branch_wires      := '1';
+                else
+                  nextstate_LS <= data_valid_waiting;
+                  busy_LS_wires := '1';
+                  if amo_store = '1' or amo_load_skip = '1' then
+                    core_busy_LS_wires := '1';
+                  end if;
                 end if;
               end if;
             else
