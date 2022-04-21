@@ -32,7 +32,7 @@ Parameters:
 <img src="/pics/Vector Coprocessor.png" width="500">
 </p> 
 
-# Merging T2M User Guide
+# Merging Klessydra-M User Guide
 
 This guide explains how one can download and install Pulpino, and it's 
 modified version of the riscv-gnu toolchain. It also demonstrates
@@ -80,36 +80,27 @@ PROCEDURE:
 		
 	When the build is done, add the path **_<path_to_toolchain>/ri5cy_gnu_toolchain/install/bin_** to the environmental variables
 
-3.	Download the PULPino suite:
+3.	To run the klessydra tests, you have to download and patch the official riscv-toolchain, and then build it. Instructions for doing so are included in the README.md file
+	inside the folder called "toolchain_files".
 
-		a) git clone https://github.com/pulp-platform/pulpino.git
+4.	Download PULPino-Klessydra:
+
+		a) git clone https://github.com/klessydra/pulpino-klessydra
 		
-		b) cd pulpino
+		b) cd pulpino-klessydra
 		
 		c) ./update-ips.py	
 
+5.	OPTIONAL: After the update scipt is done, then you will be able to test Klessydra-m.
+		-Navigate to "sw" folder inside pulpino and execute the following commands
 
-4.	If you want to run the klessydra specific tests, you have to download and patch the official riscv-toolchain, and then build it. Instructions for doing so are included in the README.md file
-	inside the folder called "toolchain_files".
-
-5.	To merge the Klessydra core, and tests:
-
-		a) git clone https://github.com/klessydra/T2M.git
+		a) mkdir build
 		
-		b) cd T2M
-		
-		c) ./runMErge.sh <pulpino_path>
-
-6.	OPTIONAL: After merging is done, this is how you will be able to test Klessydra-t2-m.
-		-Open a terminal and navigate to "sw" folder inside pulpino and execute the following commands
-
-		a) e.g. mkdir build
-		
-		b) cp cmake_configure.klessydra-t2-m.gcc.sh build/
+		b) cp cmake_configure.klessydra-m.gcc.sh build/
 		
 		c) cd build
 		
-		d) ./cmake_configure.klessydra-t2-m.gcc.sh
+		d) ./cmake_configure.klessydra-m.gcc.sh
 		   (Execute the above script twice if you ever change the variable that changes the riscv-compiler, since changing the compiler flushes the values of the variables in the cmake cache and gives an error. Executing the script for a second time after changing the riscv-compiler will let the variables be redfined again)
 		   
 		e) make vcompile
@@ -125,21 +116,21 @@ PROCEDURE:
 
 Supplimentary Information:
 
-7.	In order to run tests in Modelsim, go to the build folder and do the following:
+6.	In order to run tests in Modelsim, go to the build folder and do the following:
 		make nameofthetest.vsim (or .vsimc to run a test without modelsim GUI)
 
-8. Klessydra-T2M libraries are available, and their function is described in the software runtime manual fuond in the Docs folder
+9. Klessydra-Morph libraries are available, and their function is described in the software runtime manual fuond in the Docs folder
 
-# T2M Extensions illustration
+# Morph Extensions illustration
 
-The following illustrates briefly the parameters of the T2M, and their usage settings.
+The following illustrates briefly the parameters of the Klessydra-M, and their usage settings.
 
 - For more details about the Klessydra processing cores, please refer to the technincal manual in Docs
 - For more details about the Klessydra runtime libraries, please refer to the software runtime manual in Docs
 
-Extensions of T2M core:
+Extensions of Morph core:
 
-The T2M can be configed in many ways in the from the "cmake_configure.klessydra-t2-m.gcc.sh" found in the sw forlder:
+The Morph can be configed in many ways in the from the "cmake_configure.klessydra-t2-m.gcc.sh" found in the sw forlder:
 
 You will find the following generics that will be passed to the RTL. **_Read the comments next to the variables before modifying_**:
 1)  "THREAD_POOL_SIZE" sets the number of hardware threads.
@@ -148,7 +139,7 @@ You will find the following generics that will be passed to the RTL. **_Read the
 4)	"RV32M" this enable the M-extension of the RISCV ISA. The mul instruction is a single cycle instructions, and the mulh/hu/hsu instructions need 3 cycles. divisions are slow, and can be up to 32 cycles, however fast single cycle divisions are availabe for special cases (div by 0, numerator < denominator, numerator is 0, and numerator equals the denominator).
 5)	"superscalar_exec_en=1"  Enables superscalar execution when set to 1, else the stall of the pipeline will depend on tha latency of the instruction executing. This more than doubles the speed of the core in many applications, however if in the exceptional case the RTL is not simulating correctly, disable this and see whether the RTL will work again.
 6)	"accl_en"  Enables the generation of the hardware accelerator.
-7)	"replicate_accl_en" Once set, it replicates the accelerator for every thread, this increases the parallelism of the T2M by allocating a dedicated accelerator for each hart in the T2M.
+7)	"replicate_accl_en" Once set, it replicates the accelerator for every thread, this increases the parallelism of the Morph by allocating a dedicated accelerator for each hart in the Morph.
 8)	"multithreaded_accl_en" Set this to 1 to let the replicated accelerator have shared functional units, but maintain dedicated SPM memories for each hardware thread (note: replicate_accl_en must be set to '1').
 9)	"SPM_NUM" The number of scratchpads available "Minimum allowed is 2". When the acclerator is replicated, each hardware thread will have scratchpads equal to SPM_NUM, so in a THREAD_POOL_SIZE of 3 we will have 3*SPM_NUM scratchpads in totals
 10)	Addr_Width" This address is for scratchpads. Setting this will make the size of the spm to be: "2^Addr_Width -1"
