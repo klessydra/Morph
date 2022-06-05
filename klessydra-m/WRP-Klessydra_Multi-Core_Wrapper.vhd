@@ -163,8 +163,8 @@ signal debug_resume_int          : std_logic_vector(cluster_size-1 downto 0);
 signal fetch_enable_int          : std_logic_vector(cluster_size-1 downto 0);
 signal ext_perf_counters_int     : array_2d(cluster_size-1 downto 0)(N_EXT_PERF_COUNTERS to 1);
 --signal source_hartid_i           : natural range THREAD_POOL_SIZE_GLOBAL-1 downto 0;
+signal sw_irq                    : std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
 signal sw_irq_i                  : std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
-signal sw_irq_i2                 : std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
 signal sw_irq_served_i           : array_2d(cluster_size-1 downto 0)(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
 
 -- VCU Signals
@@ -340,8 +340,7 @@ generic(
     core_select             : in  natural range 1 downto 0;
     source_hartid_i         : in  natural range THREAD_POOL_SIZE_GLOBAL-1 downto 0;
     source_hartid_o         : out natural range THREAD_POOL_SIZE_GLOBAL-1 downto 0;
-    sw_irq_i                : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
-    sw_irq_i2               : in  std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
+    sw_irq_i                : in  std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
     sw_irq_o                : out std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
     sw_irq_served_i         : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     sw_irq_served_o         : out std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
@@ -536,8 +535,7 @@ T13_inst : klessydra_m_core
     core_select             => core_select,
     source_hartid_i         => source_hartid_o(1),
     source_hartid_o         => source_hartid_o(0), -- the output gets mapped to source_hartid_o(0) which goes as an input to the source_hartid_i of the S0 core
-    sw_irq_i                => sw_irq_i(THREAD_POOL_SIZE-1 downto 0),
-    sw_irq_i2               => sw_irq_o(1),
+    sw_irq_i                => sw_irq_o(1),
     sw_irq_o                => sw_irq_o(0),
     sw_irq_served_i         => sw_irq_served_i(0)(THREAD_POOL_SIZE-1 downto 0),
     sw_irq_served_o         => sw_irq_served_o(0),
@@ -659,8 +657,7 @@ S1_inst : klessydra_m_core
     core_select             => core_select,
     source_hartid_i         => source_hartid_o(0),
     source_hartid_o         => source_hartid_o(1), -- the output gets mapped to source_hartid_o(1) which goes as an input to the source_hartid_i of the T13 core
-    sw_irq_i                => sw_irq_i(THREAD_POOL_SIZE_GLOBAL-1 downto THREAD_POOL_SIZE_GLOBAL-1),
-    sw_irq_i2               => sw_irq_o(0),
+    sw_irq_i                => sw_irq_o(0),
     sw_irq_o                => sw_irq_o(1),
     sw_irq_served_i         => sw_irq_served_i(1)(THREAD_POOL_SIZE_GLOBAL-1 downto THREAD_POOL_SIZE_GLOBAL-1),
     sw_irq_served_o         => sw_irq_served_o(1),
@@ -808,7 +805,7 @@ S1_inst : klessydra_m_core
   kmemld_inflight_int         <= kmemld_inflight(core_select);
   kmemstr_inflight_int        <= kmemstr_inflight(core_select);
 
-  sw_irq_i <= sw_irq_o(0) or sw_irq_o(1);
+  sw_irq <= sw_irq_o(0) or sw_irq_o(1);
 
   -- Output Multiplexing
   instr_req_o                         <= instr_req_int(core_select);
@@ -885,9 +882,9 @@ S1_inst : klessydra_m_core
       core_select <= 0;  -- T13 is selected at reset
       VCU_hartID  <= 0;
     elsif rising_edge(clk_i) then
-      if unsigned(sw_irq_i(THREAD_POOL_SIZE_GLOBAL-2 downto 0)) /= 0 then
+      if unsigned(sw_irq(THREAD_POOL_SIZE_GLOBAL-2 downto 0)) /= 0 then
         core_select <= 0;
-      elsif sw_irq_i(THREAD_POOL_SIZE_GLOBAL-1) /= '0' then
+      elsif sw_irq(THREAD_POOL_SIZE_GLOBAL-1) /= '0' then
         core_select <= 1;
         if accl_en = 1 and replicate_accl_en = 1 then
           VCU_hartID  <= source_hartid_o(0);

@@ -56,7 +56,7 @@ entity klessydra_top is
     btb_en                  : natural := 0;   -- Enables the BTB instead of the single bit predictor
     btb_len                 : natural := 6;   -- Indicates the number of entries in the btb which is 2^btb_len
     superscalar_exec_en     : natural := 1;   -- Enables superscalar execution when set to 1, else the stall of the pipeline will depend on tha latency of the instruction
-    accl_en                 : natural := 1;   -- Enables the generation of the general purpose accelerator
+    accl_en                 : natural := 0;   -- Enables the generation of the general purpose accelerator
     replicate_accl_en       : natural := 0;   -- Set to 1 to replicate the accelerator for every thread
     multithreaded_accl_en   : natural := 0;   -- Set to 1 to let the replicated accelerator share the functional units (note: replicate_accl_en must be set to '1')
     SPM_NUM                 : natural := 3;   -- The number of scratchpads available "Minimum allowed is two"
@@ -127,7 +127,6 @@ entity klessydra_top is
     core_select         : in  natural range 1 downto 0;
     source_hartid_i     : in  natural range THREAD_POOL_SIZE_GLOBAL-1 downto 0; -- used to overwrite the mhartID of the core doing the context switch
     source_hartid_o     : out natural range THREAD_POOL_SIZE_GLOBAL-1 downto 0;
-    sw_irq_i            : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     sw_irq_o            : out std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
     sw_irq_served_i     : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     sw_irq_served_o     : out std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0)
@@ -150,7 +149,7 @@ architecture Klessydra of klessydra_top is
 
   subtype accl_range is integer range ACCL_NUM - 1 downto 0;  -- will be used replicated accelerators in the core 
 
-  signal sw_irq_i2               : std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
+  signal sw_irq_i                : std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
 
   -- VCU Signals
   signal rs1_to_sc               : std_logic_vector(SPM_ADDR_WID-1 downto 0);
@@ -277,8 +276,7 @@ architecture Klessydra of klessydra_top is
     core_select         : in  natural range 1 downto 0;
     source_hartid_i     : in  natural range THREAD_POOL_SIZE_GLOBAL-1 downto 0;
     source_hartid_o     : out natural range THREAD_POOL_SIZE_GLOBAL-1 downto 0;
-    sw_irq_i            : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
-    sw_irq_i2           : in  std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
+    sw_irq_i            : in  std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
     sw_irq_o            : out std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
     sw_irq_served_i     : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     sw_irq_served_o     : out std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
@@ -481,7 +479,6 @@ begin
     source_hartid_i         => source_hartid_i,
     source_hartid_o         => source_hartid_o,
     sw_irq_i                => sw_irq_i,
-    sw_irq_i2               => sw_irq_i2,
     sw_irq_o                => sw_irq_o,
     sw_irq_served_i         => sw_irq_served_i,
     sw_irq_served_o         => sw_irq_served_o,

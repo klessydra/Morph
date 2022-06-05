@@ -132,8 +132,7 @@ entity klessydra_m_core is
     core_select             : in  natural range 1 downto 0;
     source_hartid_i         : in  natural range THREAD_POOL_SIZE_GLOBAL-1 downto 0; -- used to overwrite the mhartID of the core doing the context switch
     source_hartid_o         : out natural range THREAD_POOL_SIZE_GLOBAL-1 downto 0;
-    sw_irq_i                : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
-    sw_irq_i2               : in  std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
+    sw_irq_i                : in  std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
     sw_irq_o                : out std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
     sw_irq_served_i         : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     sw_irq_served_o         : out std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
@@ -203,7 +202,7 @@ architecture Klessydra_M of klessydra_m_core is
   signal MTVEC       : array_2d(harc_range)(31 downto 0);
   signal PCER        : array_2d(harc_range)(31 downto 0);
 
-  signal sw_irq          : std_logic_vector(harc_range);
+  signal sw_irq          : std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
   signal sw_irq_pending  : std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
   signal irq_pending     : std_logic_vector(harc_range);
   signal WFI_Instr       : std_logic;
@@ -399,7 +398,6 @@ architecture Klessydra_M of klessydra_m_core is
     clk_i                             : in  std_logic;
     rst_ni                            : in  std_logic;
     source_hartid_i                   : in  natural range THREAD_POOL_SIZE_GLOBAL-1 downto 0; -- used to overwrite the mhartID of the core doing the context switch
-    sw_irq_i                          : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     irq_i                             : in  std_logic;
     fetch_enable_i                    : in  std_logic;
     boot_addr_i                       : in  std_logic_vector(31 downto 0);
@@ -479,7 +477,8 @@ architecture Klessydra_M of klessydra_m_core is
     irq_id_o                    : out std_logic_vector(4 downto 0);
     irq_ack_o                   : out std_logic;
     ext_sw_irq_het_core         : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
-    sw_irq                      : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
+    sw_irq                      : in  std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
+    sw_irq_i                    : in  std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
     sw_irq_pending              : in  std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
     source_hartid_i             : in  natural range THREAD_POOL_SIZE_GLOBAL-1 downto 0
     );
@@ -622,8 +621,7 @@ architecture Klessydra_M of klessydra_m_core is
     -- klessydra-specific signals
     core_enable_i              : in  std_logic;
     source_hartid_o            : out natural range THREAD_POOL_SIZE_GLOBAL-1 downto 0;
-    sw_irq_i                   : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
-    sw_irq_o                   : out std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
+    sw_irq                     : out std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
     sw_irq_served_i            : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     sw_irq_served_o            : out std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
     sw_irq_pending             : out std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
@@ -668,8 +666,7 @@ begin
                             (core_select = 0 and HET_CLUSTER_S1_CORE = '0') else  -- T13 is enabled
                    '0';                                                         -- either S1 or T13 is disabled
 
-  sw_irq <= sw_irq_o(THREAD_POOL_SIZE-1 downto 0) or sw_irq_i when HET_CLUSTER_S1_CORE = '0' else
-            sw_irq_o(THREAD_POOL_SIZE_GLOBAL-1) or sw_irq_i;
+  sw_irq_o <= sw_irq;
 
   hart_sleep_count_wire <= std_logic_vector(to_unsigned(add_vect_bits(harc_sleep_wire),TPS_CEIL));
   wfi_count_wire        <= std_logic_vector(to_unsigned(add_vect_bits(wfi_hart_wire),TPS_CEIL));
@@ -683,19 +680,19 @@ begin
   begin
     source_hartid_lat_wire <= source_hartid_lat;
     for i in 0 to THREAD_POOL_SIZE_GLOBAL-1 loop
-      if (context_switch = 1 and sw_irq_i2(i) = '1') then
+      if (context_switch = 1 and sw_irq_i(i) = '1') then
         source_hartid_lat_wire <= source_hartid_i;
       end if;
     end loop;
     for i in 0 to THREAD_POOL_SIZE-1 loop
-      if (context_switch = 1 and (sw_irq_i2(i) = '1' or latch_count_sw_irq(i) = '1')  and i = source_hartid_lat_wire) then  -- only the source_hartid can go to the interrupt routine
+      if (context_switch = 1 and (sw_irq_i(i) = '1' or latch_count_sw_irq(i) = '1')  and i = source_hartid_lat_wire) then  -- only the source_hartid can go to the interrupt routine
         ext_sw_irq_het_core(i) <= '1';
       else
         ext_sw_irq_het_core(i) <= '0';
       end if;
     end loop;
     if HET_CLUSTER_S1_CORE = '1' then
-      if sw_irq_i2(3) = '1' or latch_count_sw_irq(0) = '1' then
+      if sw_irq_i(3) = '1' or latch_count_sw_irq(0) = '1' then
         ext_sw_irq_het_core(0) <= '1';
       else
         ext_sw_irq_het_core(0) <= '0';
@@ -703,7 +700,7 @@ begin
     end if;
     block_input_inst_wire <= '0';
     for i in 0 to THREAD_POOL_SIZE-1 loop
-      if (context_switch = 1 and sw_irq_i2(i) = '1') then
+      if (context_switch = 1 and sw_irq_i(i) = '1') then
         block_input_inst_wire <= '1'; -- blocks the input instruction for one cycle as it comes from another hart
       end if;
     end loop;
@@ -721,14 +718,14 @@ begin
       block_input_inst   <= block_input_inst_wire;
       source_hartid_lat  <= source_hartid_lat_wire;
       for i in 0 to THREAD_POOL_SIZE-1 loop
-        if (context_switch = 1 and sw_irq_i2(i) = '1'  and i = source_hartid_lat_wire) then
+        if (context_switch = 1 and sw_irq_i(i) = '1'  and i = source_hartid_lat_wire) then
           latch_count_sw_irq(i) <= latch_count_sw_irq(i) xor '1'; -- like a 1-bit adder without a carry_out
         elsif served_irq_lat(i) = '1' then
           latch_count_sw_irq(i) <= '0';
         end if;
       end loop;
       if HET_CLUSTER_S1_CORE = '1' then
-        if sw_irq_i2(3) = '1' then
+        if sw_irq_i(3) = '1' then
           latch_count_sw_irq(0) <= latch_count_sw_irq(0) xor '1'; -- like a 1-bit adder without a carry_out
         elsif served_irq_lat(0) = '1' then
           latch_count_sw_irq(0) <= '0';
@@ -842,7 +839,6 @@ begin
       rst_ni                      => rst_ni,
       irq_i                       => irq_i,
       source_hartid_i             => source_hartid_i, 
-      sw_irq_i                    => sw_irq_i, 
       fetch_enable_i              => fetch_enable_i,
       boot_addr_i                 => boot_addr_i,
       instr_gnt_i                 => instr_gnt_i
@@ -921,6 +917,7 @@ begin
       irq_ack_o                   => irq_ack_o,
       ext_sw_irq_het_core         => ext_sw_irq_het_core,
       sw_irq                      => sw_irq,
+      sw_irq_i                    => sw_irq_i,
       sw_irq_pending              => sw_irq_pending,
       source_hartid_i             => source_hartid_i
       );
@@ -1055,8 +1052,7 @@ begin
       core_busy_o                => core_busy_o,
       core_enable_i              => core_enable_i,
       source_hartid_o            => source_hartid_o,
-      sw_irq_i                   => sw_irq_i,
-      sw_irq_o                   => sw_irq_o,
+      sw_irq                     => sw_irq,
       sw_irq_served_i            => sw_irq_served_i, 
       sw_irq_served_o            => sw_irq_served_o,
       sw_irq_pending             => sw_irq_pending,

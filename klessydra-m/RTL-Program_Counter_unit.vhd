@@ -86,7 +86,6 @@ entity Program_Counter is
     rst_ni                            : in  std_logic;
     irq_i                             : in  std_logic;
     source_hartid_i                   : in  natural range THREAD_POOL_SIZE_GLOBAL-1 downto 0; -- used to overwrite the mhartID of the core doing the context switch
-    sw_irq_i                          : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     fetch_enable_i                    : in  std_logic;
     boot_addr_i                       : in  std_logic_vector(31 downto 0);
     instr_gnt_i                       : in  std_logic

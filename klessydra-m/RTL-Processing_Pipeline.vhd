@@ -159,8 +159,7 @@ entity Pipeline is
     -- klessydra-specific signals
     core_enable_i              : in  std_logic;
     source_hartid_o            : out natural range THREAD_POOL_SIZE_GLOBAL-1 downto 0;
-    sw_irq_i                   : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
-    sw_irq_o                   : out std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
+    sw_irq                     : out std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
     sw_irq_served_i            : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     sw_irq_served_o            : out std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
     sw_irq_pending             : out std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
@@ -656,8 +655,7 @@ architecture Pipe of Pipeline is
     instr_gnt_i               : in  std_logic;
     irq_i                     : in  std_logic;
     source_hartid_o           : out natural range THREAD_POOL_SIZE_GLOBAL-1 downto 0;
-    sw_irq_i                  : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
-    sw_irq_o                  : out std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
+    sw_irq                    : out std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
     sw_irq_served_i           : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     sw_irq_served_o           : out std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
     sw_irq_pending            : out std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
@@ -1116,8 +1114,7 @@ begin
     instr_gnt_i                => instr_gnt_i,
     irq_i                      => irq_i,
     source_hartid_o            => source_hartid_o,
-    sw_irq_i                   => sw_irq_i, 
-    sw_irq_o                   => sw_irq_o, 
+    sw_irq                     => sw_irq,
     sw_irq_served_i            => sw_irq_served_i, 
     sw_irq_served_o            => sw_irq_served_o,
     sw_irq_pending             => sw_irq_pending,

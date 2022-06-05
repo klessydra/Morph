@@ -42,8 +42,7 @@ entity IE_STAGE is
     instr_gnt_i               : in  std_logic;
     irq_i                     : in  std_logic;
     source_hartid_o           : out natural range THREAD_POOL_SIZE_GLOBAL-1 downto 0;
-    sw_irq_i                  : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
-    sw_irq_o                  : out std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
+    sw_irq                    : out std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
     sw_irq_served_i           : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     sw_irq_served_o           : out std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
     sw_irq_pending            : out std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
@@ -263,7 +262,7 @@ begin
                S1_switch_routine   = '0' else
                '0';
 
-  sw_irq_o  <= sw_irq_int and sw_irq_en;
+  sw_irq  <= sw_irq_int and sw_irq_en;
 
   instr_rvalid_IE_int <= (instr_rvalid_IE or core_busy_IE_lat); -- AAA in case of non-hetergenous cluster, maybe a dual core for example, the core_enable_i should not flush the IE istruction.
 
