@@ -149,7 +149,7 @@ architecture Klessydra of klessydra_top is
 
   subtype accl_range is integer range ACCL_NUM - 1 downto 0;  -- will be used replicated accelerators in the core 
 
-  signal sw_irq_i                : std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
+  signal sw_irq_i                : std_logic_vector(THREAD_POOL_SIZE_GLOBAL-1 downto 0);
 
   -- VCU Signals
   signal rs1_to_sc               : std_logic_vector(SPM_ADDR_WID-1 downto 0);
