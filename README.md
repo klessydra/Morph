@@ -99,20 +99,20 @@ PROCEDURE:
 		e) make vcompile
 
 		For running Klessydra tests; make sure the variable "USE_KLESSYDRA_TEST" in the above bash script is set to '1' by default. You only need to build and run your test
-		f) (e.g.  make KDOTP_test.vsimc)
-		General tests for all "Txx" versions of Klessydra are also available
-		g) (e.g.  make barrier_test.vsimc)
+		f) To run an accelerated test (e.g.  make KDOTP_test.vsimc)
+
+		g) To run a non-accelerated test (e.g.  make barrier_test.vsimc)
 		
-		h) You can run one of the PULPino native tests,  (e.g. make testALU.vsimc)
+		h) You can also run one of the PULPino native tests,  (e.g. make testALU.vsimc)
 			
 	IT"S DONE!!!!!!
 
 Supplimentary Information:
 
-6.	In order to run tests under Modelsim in gui mode, navigate again to the build folder and do the following:
-		make nameofthetest.vsim (while .vsimc runs the test under Modelsim in background)
+6.	In order to run tests under Modelsim gui mode, navigate again to the build folder and do the following: make nameofthetest.vsim (while .vsimc runs the test under Modelsim in background)
 
-9. Klessydra-Morph libraries are available, and their functions are described in the software runtime manual found in the Docs folder
+
+7. Klessydra-Morph libraries are available, and their functions are described in the software runtime manual found in the Docs folder
 
 # Klessydra-Morph Parameters
 
