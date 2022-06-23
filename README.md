@@ -126,7 +126,7 @@ Extensions of Morph core:
 The Morph can be configured in many ways, these configurations can be set in "cmake_configure.klessydra-m.gcc.sh" found in the sw forlder:
 
 You will find the following generics that will be passed to the RTL. **_Read the comments next to the variables before modifying_**:
-1)	"O NTEXT_SWITCH" Generates a cluster that performs context switching between Klessydra-S1 and Klessydra-T1 cores.
+1)	"CONTEXT_SWITCH" Generates a cluster that performs context switching between Klessydra-S1 and Klessydra-T1 cores.
 2)	"THREAD_POOL_SIZE" sets the number of hardware threads.
 3)	"LUTRAM_RF" this variable creates a LUTRAM based registerfile instead of a flip-flop based one, it is good for FPGA synthesis as LUTRAMs based regfiles are more efficient than FF based ones.
 4)	"RV32E" this enables the embedded extension of the RISCV ISA, and makes the regfile to be half its original size (16 regs only).
