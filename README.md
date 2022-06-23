@@ -2,7 +2,7 @@
 
 # KLESSYDRA-M MORPHING PROCESSOR
 
-Intro: Klessydra is a family of processing cores and coprescessing unit with a fully integratted C/C++ software test suite and libraries. The Klessydra Cores are RISC-V based, and pin-to-pin compatible with the PULPino Riscy cores. Klessydra-M is a bare-metal 32-bit morphing processor fully supporting the RV32IM from the RISC-V ISA, and one instruction from the Atomic "A" extension. 'M' further extends the instruction set with a set of custom vector instructions.
+Intro: Klessydra is a family of processing cores and coprescessing units with a fully integratted C/C++ software test suite and libraries. The Klessydra Cores are RISC-V based, and pin-to-pin compatible with the PULPino Riscy cores. Klessydra-M is a bare-metal 32-bit morphing processor fully supporting the RV32IM from the RISC-V ISA, and one instruction from the Atomic "A" extension. 'M' further extends the instruction set with a set of custom vector instructions.
 
 Architecture: Morph as its predecssors T13x and T0x vesions is also an interleaved multithreaded processor (Aka, barrel processor). It interleaves three hardware threads (harts). Each hart has it's own registerfile, CSR-unit, and program counter, and the harts communicate with each other via software interrupts. However as opposed to its predecessors Klessydra-M has a dynamic architecture that can morph from one architecture to the other when needed in order to accelerate the execution of the underlying application.
 
