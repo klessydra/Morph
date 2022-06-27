@@ -20,18 +20,18 @@ entity klessydra_heterogeneous_cluster is
     RV32M                 : natural := 1;   -- Enables the M-extension of the risc-v instruction set
     context_switch        : natural := 1;   -- Enables the context switching between cores
     morph_en              : natural := 1;   -- Enables the generation of the logic that allows processor to morph from an IMT to a single core processor
-    fetch_stage_en        : natural := 1;   -- Enables the generation of a fetch stage buffer, else the incoming instrution will go directly to the decode stage.
+    fetch_stage_en        : natural := 0;   -- Enables the generation of a fetch stage buffer, else the incoming instrution will go directly to the decode stage.
     branch_predict_en     : natural := 1;   -- This enables the branch predictor
-    btb_en                : natural := 1;   -- Enables the BTB instead of the single bit predictor
+    btb_en                : natural := 0;   -- Enables the BTB instead of the single bit predictor
     btb_len               : natural := 6;   -- Indicates the number of entries in the btb which is 2^btb_len
     superscalar_exec_en   : natural := 1;   -- Enables superscalar execution when set to 1, else the stall of the pipeline will depend on tha latency of the instruction
-    accl_en               : natural := 0;   -- Enables the generation of the general purpose accelerator
-    replicate_accl_en     : natural := 0;   -- Set to 1 to replicate the accelerator for every thread
-    multithreaded_accl_en : natural := 0;   -- Set to 1 to let the replicated accelerator share the functional units (note: replicate_accl_en must be set to '1')
-    SPM_NUM               : natural := 3;   -- The number of scratchpads available "Minimum allowed is two"
+    accl_en               : natural := 1;   -- Enables the generation of the general purpose accelerator
+    replicate_accl_en     : natural := 1;   -- Set to 1 to replicate the accelerator for every thread
+    multithreaded_accl_en : natural := 1;   -- Set to 1 to let the replicated accelerator share the functional units (note: replicate_accl_en must be set to '1')
+    SPM_NUM               : natural := 4;   -- The number of scratchpads available "Minimum allowed is two"
     Addr_Width            : natural := 13;  -- This address is for scratchpads. Setting this will make the size of the spm to be: "2^Addr_Width -1"
     SPM_STRT_ADDR         : std_logic_vector(31 downto 0) := x"1000_0000";  -- This is starting address of the spms, it shouldn't overlap any sections in the memory map
-    SIMD                  : natural := 8;   -- Changing the SIMD, would change the number of the functional units in the dsp, and the number of banks in the spms (can be power of 2 only e.g. 1,2,4,8)
+    SIMD                  : natural := 2;   -- Changing the SIMD, would change the number of the functional units in the dsp, and the number of banks in the spms (can be power of 2 only e.g. 1,2,4,8)
     MCYCLE_EN             : natural := 0;   -- Can be set to 1 or 0 only. Setting to zero will disable MCYCLE and MCYCLEH
     MINSTRET_EN           : natural := 0;   -- Can be set to 1 or 0 only. Setting to zero will disable MINSTRET and MINSTRETH
     MHPMCOUNTER_EN        : natural := 0;   -- Can be set to 1 or 0 only. Setting to zero will disable all performance counters except "MCYCLE/H" and "MINSTRET/H"
@@ -258,38 +258,38 @@ component klessydra_m_core
 generic(
     THREAD_POOL_SIZE_GLOBAL : natural := 4;
     THREAD_POOL_SIZE        : natural;
-    cluster_size_ceil       : natural := 1;
-    LUTRAM_RF               : natural := 1;
-    RV32E                   : natural := 0;
-    RV32M                   : natural := 1;
-    context_switch          : natural := 1;
-    morph_en                : natural := 1;
-    fetch_stage_en          : natural := 1;
-    branch_predict_en       : natural := 1;
-    btb_en                  : natural := 1;
-    btb_len                 : natural := 6;
-    superscalar_exec_en     : natural := 1;
-    accl_en                 : natural := 0;
-    replicate_accl_en       : natural := 0;
-    multithreaded_accl_en   : natural := 0;
-    SPM_NUM                 : natural := 3;
-    Addr_Width              : natural := 13;
-    SPM_STRT_ADDR           : std_logic_vector(31 downto 0) := x"1000_0000";
-    SIMD                    : natural := 8;
-    MCYCLE_EN               : natural := 0;
-    MINSTRET_EN             : natural := 0;
-    MHPMCOUNTER_EN          : natural := 0;
-    count_all               : natural := 1;
-    debug_en                : natural := 0;
-    tracer_en               : natural := 0;
+    cluster_size_ceil       : natural;
+    LUTRAM_RF               : natural;
+    RV32E                   : natural;
+    RV32M                   : natural;
+    context_switch          : natural;
+    morph_en                : natural;
+    fetch_stage_en          : natural;
+    branch_predict_en       : natural;
+    btb_en                  : natural;
+    btb_len                 : natural;
+    superscalar_exec_en     : natural;
+    accl_en                 : natural;
+    replicate_accl_en       : natural;
+    multithreaded_accl_en   : natural;
+    SPM_NUM                 : natural;
+    Addr_Width              : natural;
+    SPM_STRT_ADDR           : std_logic_vector(31 downto 0);
+    SIMD                    : natural;
+    MCYCLE_EN               : natural;
+    MINSTRET_EN             : natural;
+    MHPMCOUNTER_EN          : natural;
+    count_all               : natural;
+    debug_en                : natural;
+    tracer_en               : natural;
     Data_Width              : natural;
     SPM_ADDR_WID            : natural;
     SIMD_BITS               : natural;
     ACCL_NUM                : natural;
-    N_EXT_PERF_COUNTERS     : integer := 0;
-    INSTR_RDATA_WIDTH       : integer := 32;
-    N_HWLP                  : integer := 2;
-    N_HWLP_BITS             : integer := 4 
+    N_EXT_PERF_COUNTERS     : integer;
+    INSTR_RDATA_WIDTH       : integer;
+    N_HWLP                  : integer;
+    N_HWLP_BITS             : integer 
 );
   port (
     clk_i                   : in  std_logic;
@@ -403,18 +403,18 @@ end component;
     SIMD_Width                 : natural
   );
   port (
-  -- Core Signals
+    -- Core Signals
     clk_i, rst_ni              : in std_logic;
     -- Processing Pipeline Signals
     rs1_to_sc                  : in  std_logic_vector(SPM_ADDR_WID-1 downto 0);
     rs2_to_sc                  : in  std_logic_vector(SPM_ADDR_WID-1 downto 0);
     rd_to_sc                   : in  std_logic_vector(SPM_ADDR_WID-1 downto 0);
-  -- CSR Signals
+    -- CSR Signals
     MVSIZE                     : in  array_2d(harc_range)(Addr_Width downto 0);
     MVTYPE                     : in  array_2d(harc_range)(3 downto 0);
     MPSCLFAC                   : in  array_2d(harc_range)(4 downto 0);
     dsp_except_data            : out array_2d(accl_range)(31 downto 0);
-  -- Program Counter Signals
+    -- Program Counter Signals
     dsp_taken_branch           : out std_logic_vector(accl_range);
     dsp_except_condition       : out std_logic_vector(accl_range);
     -- ID_Stage Signals

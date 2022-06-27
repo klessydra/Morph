@@ -74,7 +74,7 @@ entity DSP_Unit is
     vec_read_rs2_ID            : in  std_logic;
     vec_write_rd_ID            : in  std_logic;
     busy_dsp                   : out std_logic_vector(ACCL_NUM-1 downto 0);
-  -- Scratchpad Interface Signals
+    -- Scratchpad Interface Signals
     dsp_data_gnt_i             : in  std_logic_vector(ACCL_NUM-1 downto 0);
     dsp_sci_wr_gnt             : in  std_logic_vector(ACCL_NUM-1 downto 0);
     dsp_sc_data_read           : in  array_3d(ACCL_NUM-1 downto 0)(1 downto 0)(SIMD_Width-1 downto 0);
