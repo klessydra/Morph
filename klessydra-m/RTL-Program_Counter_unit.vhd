@@ -26,6 +26,7 @@ entity Program_Counter is
   generic (
     THREAD_POOL_SIZE_GLOBAL           : natural;
     THREAD_POOL_SIZE                  : natural;
+    HET_CLUSTER_S1_CORE               : natural;
     ACCL_NUM                          : natural;
     morph_en                          : natural
   );
@@ -45,7 +46,6 @@ entity Program_Counter is
     set_except_condition              : in  std_logic;
     set_mret_condition                : in  std_logic;
     set_wfi_condition                 : in  std_logic;
-    HET_CLUSTER_S1_CORE               : in  std_logic;
     harc_FETCH                        : in  natural range THREAD_POOL_SIZE-1 downto 0;
     harc_ID                           : in  natural range THREAD_POOL_SIZE-1 downto 0;
     harc_EXEC                         : in  natural range THREAD_POOL_SIZE-1 downto 0;
@@ -413,7 +413,7 @@ begin
         served_except_condition_lat(h)       <= '0';
         served_mret_condition_lat(h)         <= '0';
         -- The S1 core in the hetergeneous cluster does not have a reset state and takes only the state of the hart that is doing the context switch
-        if HET_CLUSTER_S1_CORE = '1' then -- sibce at reset we start execution with the T13 core
+        if HET_CLUSTER_S1_CORE = 1 then -- since at reset we start execution with the T13 core
           pc(h) <= (31 downto 8 => '0') & std_logic_vector(to_unsigned(160,8)); -- Put address 0x0000_00A0 which is the pointer to the context load instruction
         else
           pc(h) <= (31 downto 8 => '0') & std_logic_vector(to_unsigned(128,8)); -- Put address 0x0000_0080 which is the pointer to the reset handler

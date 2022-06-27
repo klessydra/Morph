@@ -314,7 +314,18 @@ architecture Klessydra_M of klessydra_m_core is
   signal IMT_ACTIVE_HARTS        : natural;
   signal MORPH_ACTIVE_HARTS      : natural;
 
-  signal HET_CLUSTER_S1_CORE     : std_logic;
+  function and_const(a: natural; b: natural) return natural is
+    variable c : natural;
+  begin
+    if a = b then
+      c := 1;
+    else
+      c := 0;
+    end if;
+    return c;
+  end function and_const;
+
+  constant HET_CLUSTER_S1_CORE   : natural := and_const(THREAD_POOL_SIZE, context_switch);
   signal block_input_inst_wire   : std_logic;
   signal block_input_inst        : std_logic;
 
@@ -339,6 +350,7 @@ architecture Klessydra_M of klessydra_m_core is
   generic (
     THREAD_POOL_SIZE_GLOBAL           : natural;
     THREAD_POOL_SIZE                  : natural;
+    HET_CLUSTER_S1_CORE               : natural;
     ACCL_NUM                          : natural;
     morph_en                          : natural
   );
@@ -358,7 +370,6 @@ architecture Klessydra_M of klessydra_m_core is
     set_except_condition              : in  std_logic;
     set_mret_condition                : in  std_logic;
     set_wfi_condition                 : in  std_logic;
-    HET_CLUSTER_S1_CORE               : in  std_logic;
     harc_FETCH                        : in  harc_range;
     harc_ID                           : in  harc_range;
     harc_EXEC                         : in  natural range THREAD_POOL_SIZE-1 downto 0;
@@ -409,6 +420,7 @@ architecture Klessydra_M of klessydra_m_core is
   generic (
     THREAD_POOL_SIZE_GLOBAL     : natural;
     THREAD_POOL_SIZE            : natural;
+    HET_CLUSTER_S1_CORE         : natural;
     ACCL_NUM                    : natural;
     Addr_Width                  : natural;
     replicate_accl_en           : natural;
@@ -438,7 +450,6 @@ architecture Klessydra_M of klessydra_m_core is
     served_pending_irq          : in  std_logic_vector(harc_range);
     pc_except_value_wire        : in  array_2d(harc_range)(31 downto 0);
     data_addr_internal          : in  std_logic_vector(31 downto 0);
-    HET_CLUSTER_S1_CORE         : in  std_logic;
     jump_instr                  : in  std_logic;
     branch_instr                : in  std_logic;
     set_branch_condition        : in  std_logic;
@@ -488,6 +499,7 @@ architecture Klessydra_M of klessydra_m_core is
   generic(
     THREAD_POOL_SIZE_GLOBAL    : natural;
     THREAD_POOL_SIZE           : natural;
+    HET_CLUSTER_S1_CORE        : natural;
     LUTRAM_RF                  : natural;
     RV32E                      : natural;
     RV32M                      : natural;
@@ -592,7 +604,6 @@ architecture Klessydra_M of klessydra_m_core is
     wfi_hart_wire              : in  std_logic_vector(harc_range);
     CORE_STATE                 : in  std_logic_vector(THREAD_POOL_BASELINE downto 0);
     IMT_ACTIVE_HARTS           : in  natural;
-    HET_CLUSTER_S1_CORE        : in  std_logic;
     halt_update                : out std_logic_vector(harc_range);
 
     -- clock, reset active low, test enable
@@ -661,9 +672,8 @@ architecture Klessydra_M of klessydra_m_core is
 ----------------------- ARCHITECTURE BEGIN -------------------------------------------------------              
 begin
 
-  HET_CLUSTER_S1_CORE <= '1' when THREAD_POOL_SIZE = context_switch else '0';
-  core_enable_i <= '1' when (core_select = 1 and HET_CLUSTER_S1_CORE = '1') or    -- S1 is enabled
-                            (core_select = 0 and HET_CLUSTER_S1_CORE = '0') else  -- T13 is enabled
+  core_enable_i <= '1' when (core_select = 1 and HET_CLUSTER_S1_CORE = 1) or    -- S1 is enabled
+                            (core_select = 0 and HET_CLUSTER_S1_CORE = 0) else  -- T13 is enabled
                    '0';                                                         -- either S1 or T13 is disabled
 
   sw_irq_o <= sw_irq;
@@ -691,7 +701,7 @@ begin
         ext_sw_irq_het_core(i) <= '0';
       end if;
     end loop;
-    if HET_CLUSTER_S1_CORE = '1' then
+    if HET_CLUSTER_S1_CORE = 1 then
       if sw_irq_i(3) = '1' or latch_count_sw_irq(0) = '1' then
         ext_sw_irq_het_core(0) <= '1';
       else
@@ -724,7 +734,7 @@ begin
           latch_count_sw_irq(i) <= '0';
         end if;
       end loop;
-      if HET_CLUSTER_S1_CORE = '1' then
+      if HET_CLUSTER_S1_CORE = 1 then
         if sw_irq_i(3) = '1' then
           latch_count_sw_irq(0) <= latch_count_sw_irq(0) xor '1'; -- like a 1-bit adder without a carry_out
         elsif served_irq_lat(0) = '1' then
@@ -776,6 +786,7 @@ begin
     generic map (
       THREAD_POOL_SIZE_GLOBAL     => THREAD_POOL_SIZE_GLOBAL,
       THREAD_POOL_SIZE            => THREAD_POOL_SIZE,
+      HET_CLUSTER_S1_CORE         => HET_CLUSTER_S1_CORE,
       ACCL_NUM                    => ACCL_NUM,
       morph_en                    => morph_en
       )
@@ -795,7 +806,6 @@ begin
       set_except_condition        => set_except_condition,
       set_mret_condition          => set_mret_condition,
       set_wfi_condition           => set_wfi_condition,
-      HET_CLUSTER_S1_CORE         => HET_CLUSTER_S1_CORE,
       harc_FETCH                  => harc_FETCH,
       harc_ID                     => harc_ID,
       harc_EXEC                   => harc_EXEC,
@@ -848,6 +858,7 @@ begin
     generic map (
       THREAD_POOL_SIZE_GLOBAL     => THREAD_POOL_SIZE_GLOBAL,
       THREAD_POOL_SIZE            => THREAD_POOL_SIZE,
+      HET_CLUSTER_S1_CORE         => HET_CLUSTER_S1_CORE,
       ACCL_NUM                    => ACCL_NUM,
       Addr_Width                  => Addr_Width,
       replicate_accl_en           => replicate_accl_en,
@@ -877,7 +888,6 @@ begin
       served_pending_irq          => served_pending_irq,
       pc_except_value_wire        => pc_except_value_wire,
       data_addr_internal          => data_addr_internal,
-      HET_CLUSTER_S1_CORE         => HET_CLUSTER_S1_CORE,
       jump_instr                  => jump_instr,
       branch_instr                => branch_instr,
       set_branch_condition        => set_branch_condition,
@@ -926,6 +936,7 @@ begin
     generic map(
       THREAD_POOL_SIZE_GLOBAL => THREAD_POOL_SIZE_GLOBAL,
       THREAD_POOL_SIZE        => THREAD_POOL_SIZE,
+      HET_CLUSTER_S1_CORE     => HET_CLUSTER_S1_CORE,
       LUTRAM_RF               => LUTRAM_RF,
       RV32E                   => RV32E,
       RV32M                   => RV32M,
@@ -1030,7 +1041,6 @@ begin
       wfi_hart_wire              => wfi_hart_wire,
       CORE_STATE                 => CORE_STATE,
       IMT_ACTIVE_HARTS           => IMT_ACTIVE_HARTS,
-      HET_CLUSTER_S1_CORE        => HET_CLUSTER_S1_CORE,
       halt_update                => halt_update,
       clk_i                      => clk_i,
       rst_ni                     => rst_ni,

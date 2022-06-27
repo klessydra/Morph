@@ -32,6 +32,7 @@ entity IE_STAGE is
     fetch_stage_en            : natural;
     branch_predict_en         : natural;
     RV32M                     : natural;
+    HET_CLUSTER_S1_CORE       : natural;
     TPS_CEIL                  : natural;
     --TPS_GLBL_CEIL             : natural;
     RF_CEIL                   : natural
@@ -77,14 +78,12 @@ entity IE_STAGE is
     taken_branch              : in  std_logic;
     halt_IE                   : in  std_logic;
     decoded_instruction_IE    : in  std_logic_vector(EXEC_UNIT_INSTR_SET_SIZE-1 downto 0);
-    harc_sleep_wire           : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     harc_sleep                : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     wfi_hart_wire             : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     core_enable_i             : in  std_logic;
     CORE_STATE                : in  std_logic_vector(THREAD_POOL_BASELINE downto 0);
     CORE_STATE_ID             : in  std_logic_vector(THREAD_POOL_BASELINE downto 0);
     IMT_ACTIVE_HARTS          : in  natural;
-    HET_CLUSTER_S1_CORE       : in  std_logic;
     csr_addr_i                : out std_logic_vector(11 downto 0);
     ie_except_data            : out std_logic_vector(31 downto 0);
     ie_csr_wdata_i            : out std_logic_vector(31 downto 0);
@@ -421,7 +420,7 @@ begin
             -----------------------------------------------------------
 
             if decoded_instruction_IE(SW_MIP_bit_position) = '1' then
-              if HET_CLUSTER_S1_CORE = '1' then -- if the current core is the S1 core in the Het. cluster
+              if HET_CLUSTER_S1_CORE = 1 then -- if the current core is the S1 core in the Het. cluster
                 for i in 0 to THREAD_POOL_SIZE_GLOBAL-2 loop -- loop throughout the harts of the T13 core
                   if sw_irq_int(i) = '1' then
                     sw_irq_count <= sw_irq_count xor '1'; -- does a 1-bit addition, also can be done with an XOR when one input is a constant
@@ -817,7 +816,7 @@ begin
             --csr_op_i <= CSRRW;
             if data_addr_internal_IE(31 downto 9) = x"0000F" & "111" then
               if halt_IE = '0' then
-                if HET_CLUSTER_S1_CORE = '1' then -- if the current core is the S1 core in the Het. cluster
+                if HET_CLUSTER_S1_CORE = 1 then -- if the current core is the S1 core in the Het. cluster
                   for i in 0 to THREAD_POOL_SIZE_GLOBAL-2 loop -- loop throughout the harts of the T13 core
                     if sw_irq_int(i) = '1' then
                       if sw_irq_count = '0' then

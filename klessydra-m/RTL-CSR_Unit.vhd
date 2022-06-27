@@ -31,6 +31,7 @@ entity CSR_Unit is
   generic (
     THREAD_POOL_SIZE_GLOBAL : natural;
     THREAD_POOL_SIZE        : natural;
+    HET_CLUSTER_S1_CORE     : natural;
     ACCL_NUM                : natural;
     Addr_Width              : natural;
     replicate_accl_en       : natural;
@@ -60,7 +61,6 @@ entity CSR_Unit is
     served_pending_irq          : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     pc_except_value_wire        : in  array_2d(THREAD_POOL_SIZE-1 downto 0)(31 downto 0);
     data_addr_internal          : in  std_logic_vector(31 downto 0);
-    HET_CLUSTER_S1_CORE         : in  std_logic;
     jump_instr                  : in  std_logic;
     branch_instr                : in  std_logic;
     set_branch_condition        : in  std_logic;
@@ -190,7 +190,7 @@ begin
 
   process(all)
   begin
-    if HET_CLUSTER_S1_CORE = '0' then
+    if HET_CLUSTER_S1_CORE = 0 then
       sw_irq_int <= (sw_irq(THREAD_POOL_SIZE-1 downto 0) or sw_irq_i(THREAD_POOL_SIZE-1 downto 0));
     else 
       if THREAD_POOL_SIZE = 1 then -- this is redundant, but lets the core synthesize
@@ -234,7 +234,7 @@ begin
         MHARTID(h)                          <= std_logic_vector(resize(unsigned(core_id_i) * (THREAD_POOL_SIZE_GLOBAL- THREAD_POOL_SIZE)  + to_unsigned(h, THREAD_ID_SIZE), 10));
         MBHARTID(h)                         <= std_logic_vector(resize(unsigned(core_id_i) * (THREAD_POOL_SIZE_GLOBAL- THREAD_POOL_SIZE)  + to_unsigned(h, THREAD_ID_SIZE), 10));
         MPIP(h)                             <= (others => '0');
-        MSTATUS_internal(h)                 <= "01" when HET_CLUSTER_S1_CORE = '1' else MSTATUS_RESET_VALUE;
+        MSTATUS_internal(h)                 <= "01" when HET_CLUSTER_S1_CORE = 1 else MSTATUS_RESET_VALUE;
         MESTATUS(h)                         <= MESTATUS_RESET_VALUE;
         MEPC_internal(h)                    <= MEPC_RESET_VALUE;
         MCAUSE_internal(h)                  <= MCAUSE_RESET_VALUE;
@@ -310,7 +310,7 @@ begin
         -- sw interrupt from other cores are handled here
         if sw_irq_int(h) = '1' then
           MIP_internal(h)(3) <= '1';
-          if HET_CLUSTER_S1_CORE = '1' then
+          if HET_CLUSTER_S1_CORE = 1 then
             MHARTID(h) <= std_logic_vector(to_unsigned(source_hartid_i,10)); -- AAA adjust the size of mhartID
           end if;
         end if;

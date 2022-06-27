@@ -26,6 +26,7 @@ entity Pipeline is
   generic(
     THREAD_POOL_SIZE_GLOBAL    : natural;
     THREAD_POOL_SIZE           : natural;
+    HET_CLUSTER_S1_CORE        : natural;
     LUTRAM_RF                  : natural;
     RV32E                      : natural;
     RV32M                      : natural;
@@ -130,7 +131,6 @@ entity Pipeline is
     wfi_hart_wire              : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     CORE_STATE                 : in  std_logic_vector(THREAD_POOL_BASELINE downto 0);
     IMT_ACTIVE_HARTS           : in  natural;
-    HET_CLUSTER_S1_CORE        : in  std_logic;
     halt_update                : out std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
 
     -- clock, reset active low, test enable
@@ -522,7 +522,6 @@ architecture Pipe of Pipeline is
     instr_word_IE_WB           : in  std_logic_vector(31 downto 0);
     spm_rs1                    : out std_logic;
     spm_rs2                    : out std_logic;
-    harc_sleep_wire            : in  std_logic_vector(harc_range);
     harc_sleep                 : in  std_logic_vector(harc_range);
     CORE_STATE                 : in  std_logic_vector(THREAD_POOL_BASELINE downto 0);
     CORE_STATE_FETCH           : in  std_logic_vector(THREAD_POOL_BASELINE downto 0);
@@ -646,6 +645,7 @@ architecture Pipe of Pipeline is
     fetch_stage_en            : natural; 
     branch_predict_en         : natural;
     RV32M                     : natural;
+    HET_CLUSTER_S1_CORE       : natural;
     TPS_CEIL                  : natural;
     RF_CEIL                   : natural
   );
@@ -691,14 +691,12 @@ architecture Pipe of Pipeline is
     taken_branch              : in  std_logic;
     halt_IE                   : in  std_logic;
     decoded_instruction_IE    : in  std_logic_vector(EXEC_UNIT_INSTR_SET_SIZE-1 downto 0);
-    harc_sleep_wire           : in  std_logic_vector(harc_range);
     harc_sleep                : in  std_logic_vector(harc_range);
     wfi_hart_wire             : in  std_logic_vector(harc_range);
     core_enable_i             : in  std_logic;
     CORE_STATE                : in  std_logic_vector(THREAD_POOL_BASELINE downto 0);
     CORE_STATE_ID             : in  std_logic_vector(THREAD_POOL_BASELINE downto 0);
     IMT_ACTIVE_HARTS          : in  natural;
-    HET_CLUSTER_S1_CORE       : in  std_logic;
     csr_addr_i                : out std_logic_vector(11 downto 0);
     ie_except_data            : out std_logic_vector(31 downto 0);
     ie_csr_wdata_i            : out std_logic_vector(31 downto 0);
@@ -996,7 +994,6 @@ begin
     flush_hart_ID              => flush_hart_ID,
     branch_predict_taken_ID    => branch_predict_taken_ID,
     branch_predict_taken_IE    => branch_predict_taken_IE,
-    harc_sleep_wire            => harc_sleep_wire,
     harc_sleep                 => harc_sleep,
     CORE_STATE                 => CORE_STATE,
     CORE_STATE_FETCH           => CORE_STATE_FETCH,
@@ -1105,6 +1102,7 @@ begin
     fetch_stage_en             => fetch_stage_en,
     branch_predict_en          => branch_predict_en, 
     RV32M                      => RV32M,
+    HET_CLUSTER_S1_CORE        => HET_CLUSTER_S1_CORE,
     TPS_CEIL                   => TPS_CEIL,
     RF_CEIL                    => RF_CEIL
   )
@@ -1150,14 +1148,12 @@ begin
     taken_branch               => taken_branch,
     halt_IE                    => halt_IE,
     decoded_instruction_IE     => decoded_instruction_IE,
-    harc_sleep_wire            => harc_sleep_wire,
     harc_sleep                 => harc_sleep,
     wfi_hart_wire              => wfi_hart_wire,
     core_enable_i              => core_enable_i,
     CORE_STATE                 => CORE_STATE,
     CORE_STATE_ID              => CORE_STATE_ID,
     IMT_ACTIVE_HARTS           => IMT_ACTIVE_HARTS,
-    HET_CLUSTER_S1_CORE        => HET_CLUSTER_S1_CORE,
     csr_addr_i                 => csr_addr_i,
     ie_except_data             => ie_except_data,
     ie_csr_wdata_i             => ie_csr_wdata_i,
@@ -1275,15 +1271,16 @@ begin
   ---------------------------------------------------------
 
   -- pragma translate_off
-
   Tracer_generate : if tracer_en = 1 generate
   Tracer_sync : process(clk_i, rst_ni) -- also implements the delay slot counters and some aux signals
+    --alias ie_instr_req_a     is <<signal .tb.top_i.core_region_i.CORE.RISCV_CORE.T13_inst.Pipe.DECODE.ie_instr_req : std_logic>>;
+    --alias core_busy_IE_lat_a is <<signal .tb.top_i.core_region_i.CORE.RISCV_CORE.T13_inst.Pipe.EXECUTE.core_busy_IE_lat : std_logic>>;
+    --alias irq_pending_a      is <<signal .tb.top_i.core_region_i.CORE.RISCV_CORE.T13_inst.Prg_Ctr.irq_pending : std_logic_vector(harc_range)>>;
     variable row  : line;
     variable row0 : line;
   begin
     if rst_ni = '0' then
     elsif rising_edge(clk_i) then
-
 
       ----------------------------------------------------------------
       --  ██╗███████╗    ████████╗██████╗  █████╗  ██████╗███████╗  --
