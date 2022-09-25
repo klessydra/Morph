@@ -1296,12 +1296,6 @@ begin
     variable row0       : line;
   begin
     if rst_ni = '0' then
-      for i in 0 to THREAD_POOL_SIZE-1 loop
-        if (file_state(i) = closed) then
-          file_open(trace_o, filenames(i), write_mode);
-          file_state(i) := opened;
-        end if;
-      end loop;
     elsif rising_edge(clk_i) then
 
       ----------------------------------------------------------------

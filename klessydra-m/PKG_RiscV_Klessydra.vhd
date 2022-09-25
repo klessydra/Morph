@@ -24,13 +24,13 @@ package riscv_klessydra is
   -- instruction trace file
   file file_handler : text open write_mode is "execution_trace.txt";
 
-  file file_handler0 : text open write_mode is "execution_0.txt";
+  --file file_handler0 : text open write_mode is "execution_0.txt";
 
-  file file_handler1 : text open write_mode is "execution_1.txt";
+  --file file_handler1 : text open write_mode is "execution_1.txt";
 
-  file file_handler2 : text open write_mode is "execution_2.txt";
+  --file file_handler2 : text open write_mode is "execution_2.txt";
 
-  file file_handler3 : text open write_mode is "execution_3.txt";
+  --file file_handler3 : text open write_mode is "execution_3.txt";
 
 ------------------------------------------------------------------------------------------------------------
 --   ██████╗██╗   ██╗███████╗████████╗ ██████╗ ███╗   ███╗    ████████╗██╗   ██╗██████╗ ███████╗███████╗  --
