@@ -202,6 +202,20 @@ architecture Pipe of Pipeline is
   subtype accl_range is integer range ACCL_NUM - 1 downto 0;
   subtype fu_range   is integer range FU_NUM - 1 downto 0;
 
+  type fstate is (closed, opened);
+  type fstate_arr is array (0 to THREAD_POOL_SIZE-1) of fstate;
+  type file_name_arr is array(0 to 7) of string(1 to 15);
+  constant filenames : file_name_arr := (
+    0 => "execution_0.txt",
+    1 => "execution_1.txt",
+    2 => "execution_2.txt",
+    3 => "execution_3.txt",
+    4 => "execution_4.txt",
+    5 => "execution_5.txt",
+    6 => "execution_6.txt",
+    7 => "execution_7.txt"
+  );
+
   signal rs1_valid_ID           : std_logic;
   signal rs2_valid_ID           : std_logic;
   signal rd_valid_ID            : std_logic;
@@ -1276,10 +1290,18 @@ begin
     --alias ie_instr_req_a     is <<signal .tb.top_i.core_region_i.CORE.RISCV_CORE.T13_inst.Pipe.DECODE.ie_instr_req : std_logic>>;
     --alias core_busy_IE_lat_a is <<signal .tb.top_i.core_region_i.CORE.RISCV_CORE.T13_inst.Pipe.EXECUTE.core_busy_IE_lat : std_logic>>;
     --alias irq_pending_a      is <<signal .tb.top_i.core_region_i.CORE.RISCV_CORE.T13_inst.Prg_Ctr.irq_pending : std_logic_vector(harc_range)>>;
-    variable row  : line;
-    variable row0 : line;
+    file     trace_o    : text;
+    variable file_state : fstate_arr := (others => closed); -- AAA decide whether to put this inside a reset state where the trace is reset everytime (consider FT processors that always reset the failed tests)
+    variable row        : line;
+    variable row0       : line;
   begin
     if rst_ni = '0' then
+      for i in 0 to THREAD_POOL_SIZE-1 loop
+        if (file_state(i) = closed) then
+          file_open(trace_o, filenames(i), write_mode);
+          file_state(i) := opened;
+        end if;
+      end loop;
     elsif rising_edge(clk_i) then
 
       ----------------------------------------------------------------
@@ -1995,19 +2017,24 @@ begin
          end loop;
      end if;
      ----------------------------------------------------------------------- Write Line -------------------------------------------------------------
+    file_open(trace_o, filenames(harc_EXEC), append_mode);
      for i in 0 to THREAD_POOL_SIZE-1 loop
        if harc_EXEC=i then  
          if (instr_rvalid_IE = '1') then
-           if i = 0 then
-             writeline(file_handler0, row0);  -- Writes line to instr. trace file
-           elsif i = 1 then
-             writeline(file_handler1, row0);  -- Writes line to instr. trace file
-           elsif i = 2 then
-             writeline(file_handler2, row0);  -- Writes line to instr. trace file
-           end if;
+           --if i = 0 then
+           --  writeline(file_handler0, row0);  -- Writes line to instr. trace file
+           --elsif i = 1 then
+           --  writeline(file_handler1, row0);  -- Writes line to instr. trace file
+           --elsif i = 2 then
+           --  writeline(file_handler2, row0);  -- Writes line to instr. trace file
+           --elsif i = 3 then
+           --  writeline(file_handler3, row0);  -- Writes line to instr. trace file
+           --end if;
+           writeline(trace_o, row0);
          end if;
        end if;
      end loop;
+    file_close (trace_o);
      ------------------------------------------------------------------------------------------------------------------------------------------------
 
     end if;  -- reset, clk_i
