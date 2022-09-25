@@ -98,7 +98,7 @@ architecture PC of Program_counter is
   subtype harc_range is natural range THREAD_POOL_SIZE-1 downto 0;
   subtype accl_range is integer range ACCL_NUM-1 downto 0;
 
-  signal reset_state                           : std_logic;
+  signal reset_state                           : std_logic_vector(harc_range);
 
   -- pc updater signals
   signal pc_update_enable                      : std_logic_vector(harc_range);
@@ -405,7 +405,7 @@ begin
     pc_update_sync : process (clk_i, rst_ni)
     begin
       if rst_ni = '0' then 
-        reset_state                          <= '1';
+        reset_state                          <= (others => '1');
         taken_branch_pending_internal_lat(h) <= '0';
         served_ie_except_condition_lat(h)    <= '0';
         served_ls_except_condition_lat(h)    <= '0';
@@ -420,7 +420,7 @@ begin
         end if;
       elsif rising_edge(clk_i) then
         if fetch_enable_i = '1' then
-          reset_state <= '0';
+          reset_state(harc_IF_internal) <= '0';
         end if;
         pc(h)                                   <= pc_wire(h);
         taken_branch_pc_pending_internal_lat(h) <= taken_branch_pc_pending_internal(h);
@@ -448,7 +448,7 @@ begin
       if ext_sw_irq_het_core(h) = '1' then
         pc_wire(h) <= (31 downto 8 => '0') & std_logic_vector(to_unsigned(160,8)); -- Put address 0x0000_00A0 which is the pointer to the context load instruction
       else
-        if (reset_state = '0') then
+        if (reset_state(h) = '0') then
           pc_update(
             fetch_enable_i,
             MTVEC(h),
