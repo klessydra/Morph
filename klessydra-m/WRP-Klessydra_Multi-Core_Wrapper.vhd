@@ -15,7 +15,8 @@ use work.riscv_klessydra.all;
 entity klessydra_heterogeneous_cluster is
   generic (
     THREAD_POOL_SIZE      : natural := 3;   -- Changing the TPS to less than "number of pipeline stages-1" is not allowed. And making it bigger than "pipeline stages-1" is okay but not recommended
-    LUTRAM_RF             : natural := 1;   -- Changes the regfile from flip-flop type into BRAM type
+    lutram_rf             : natural := 1;   -- Changes the regfile from flip-flop type into BRAM type
+    latch_rf              : natural := 0;   -- Changes the regfile from flip-flop type into Latch type (only works if lutram_rf is set to 0)
     RV32E                 : natural := 0;   -- Regfile size, Can be set to 32 for RV32E being 0 else 16 for RV32E being set to 1
     RV32M                 : natural := 1;   -- Enables the M-extension of the risc-v instruction set
     context_switch        : natural := 1;   -- Enables the context switching between cores
@@ -259,7 +260,8 @@ generic(
     THREAD_POOL_SIZE_GLOBAL : natural := 4;
     THREAD_POOL_SIZE        : natural;
     cluster_size_ceil       : natural;
-    LUTRAM_RF               : natural;
+    lutram_rf               : natural;
+    latch_rf                : natural;
     RV32E                   : natural;
     RV32M                   : natural;
     context_switch          : natural;
@@ -459,7 +461,8 @@ T13_inst : klessydra_m_core
     THREAD_POOL_SIZE_GLOBAL => 4,
     THREAD_POOL_SIZE        => 3,
     cluster_size_ceil       => cluster_size_ceil,
-    LUTRAM_RF               => LUTRAM_RF,
+    lutram_rf               => lutram_rf,
+    latch_rf                => latch_rf,
     RV32E                   => RV32E,
     RV32M                   => RV32M,
     context_switch          => 1,
@@ -581,7 +584,8 @@ S1_inst : klessydra_m_core
     THREAD_POOL_SIZE_GLOBAL => 4,
     THREAD_POOL_SIZE        => 1,
     cluster_size_ceil       => cluster_size_ceil,
-    LUTRAM_RF               => LUTRAM_RF,
+    lutram_rf               => lutram_rf,
+    latch_rf                => latch_rf,
     RV32E                   => RV32E,
     RV32M                   => RV32M,
     context_switch          => 1,

@@ -27,7 +27,8 @@ use work.riscv_klessydra.all;
 entity REGISTERFILE is
   generic(
     THREAD_POOL_SIZE           : natural;
-    LUTRAM_RF                  : natural;
+    lutram_rf                  : natural;
+    latch_rf                   : natural;
     morph_en                   : natural;
     fetch_stage_en             : natural;
     accl_en                    : natural;
@@ -95,6 +96,11 @@ architecture RF of REGISTERFILE is
 
   subtype harc_range is natural range THREAD_POOL_SIZE - 1 downto 0;
 
+  signal RF_res          : std_logic_vector(31 downto 0);
+  signal WB_EN_lat       : std_logic;
+  signal harc_LAT        : harc_range;
+  signal instr_word_LAT  : std_logic_vector(31 downto 0);
+
   signal regfile_lutram_rs1 : array_2d((THREAD_POOL_SIZE*RF_SIZE)-1 downto 0)(31 downto 0);
   signal regfile_lutram_rs2 : array_2d((THREAD_POOL_SIZE*RF_SIZE)-1 downto 0)(31 downto 0);
   signal regfile_lutram_rd  : array_2d((THREAD_POOL_SIZE*RF_SIZE)-1 downto 0)(31 downto 0);
@@ -142,30 +148,69 @@ architecture RF of REGISTERFILE is
 
 begin
 
-  RF_FF : if LUTRAM_RF = 0 generate
 
-  RF_ACCESS : process(clk_i, rst_ni, instr_word_ID)  -- synch single state process
+  ------------------------------------------------------------
+  --  ██████╗ ███████╗ ██████╗ ███████╗██╗██╗     ███████╗  --
+  --  ██╔══██╗██╔════╝██╔════╝ ██╔════╝██║██║     ██╔════╝  --
+  --  ██████╔╝█████╗  ██║  ███╗█████╗  ██║██║     █████╗    --
+  --  ██╔══██╗██╔══╝  ██║   ██║██╔══╝  ██║██║     ██╔══╝    --
+  --  ██║  ██║███████╗╚██████╔╝██║     ██║███████╗███████╗  --
+  --  ╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝╚══════╝  --
+  ------------------------------------------------------------
+
+  RF_FF : if lutram_rf = 0 generate
+
+  LATCH_REGFILE : if latch_rf = 1 generate
+
+  RF_WR_ACCESS : process(all)  -- synch single state process
   begin
-    if rst_ni = '0' then
       for h in harc_range loop
         regfile(h)(0) <= (others => '0');
       end loop;
+      if WB_EN_lat = '1' then
+        regfile(harc_LAT)(rd(instr_word_LAT)) <= RF_res;
+      end if;
+  end process;
+
+  end generate; -- latch_rf = 1
+
+
+  FF_REGFILE : if latch_rf = 0 generate
+
+  RF_WR_ACCESS : process(clk_i, rst_ni, instr_word_ID)  -- synch single state process
+  begin
+    if rst_ni = '0' then
+      for h in harc_range loop
+        if latch_rf = 0 then
+          regfile(h)(0) <= (others => '0');
+        end if;
+      end loop;
     elsif rising_edge(clk_i) then
+      if WB_EN = '1' then
+        regfile(harc_WB)(rd(instr_word_WB)) <= WB_RD;
+      end if;
+    end if;  -- clk
+  end process;
+
+  end generate; -- latch_rf = 0
+
+
+  RF_RD_ACCESS : process(clk_i, rst_ni, instr_word_ID)  -- synch single state process
+  begin
+    if rst_ni = '0' then
+      WB_EN_lat <= '0';
+      harc_LAT <= THREAD_POOL_SIZE-1;
+      instr_word_LAT <= (others => '0');
+    elsif rising_edge(clk_i) then
+      harc_LAT <= harc_WB;
+      instr_word_LAT <= instr_word_WB;
+      WB_EN_lat <= WB_EN;
       if core_busy_IE = '1' or core_busy_LS = '1' or ls_parallel_exec = '0'  or dsp_parallel_exec = '0' then -- the instruction pipeline is halted
       elsif instr_rvalid_ID_int = '0' then -- wait for a valid instruction
       else  -- process the incoming instruction 
 
         -- AAA create the bypass here for this as well
         data_addr_internal_IE <= std_logic_vector(signed(regfile(harc_ID)(rs1(instr_word_ID))) + signed(S_immediate(instr_word_ID)));
-
-        ------------------------------------------------------------
-        --  ██████╗ ███████╗ ██████╗ ███████╗██╗██╗     ███████╗  --
-        --  ██╔══██╗██╔════╝██╔════╝ ██╔════╝██║██║     ██╔════╝  --
-        --  ██████╔╝█████╗  ██║  ███╗█████╗  ██║██║     █████╗    --
-        --  ██╔══██╗██╔══╝  ██║   ██║██╔══╝  ██║██║     ██╔══╝    --
-        --  ██║  ██║███████╗╚██████╔╝██║     ██║███████╗███████╗  --
-        --  ╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝╚══════╝  --
-        ------------------------------------------------------------
 
         ----- REGISTERFILE READ IS DONE HERE --------------------------------------------------------------------------------------------------------------
          RS1_Data_IE <= RS1_Data_IE_wire; 
@@ -186,9 +231,10 @@ begin
        -- pragma translate_on
        ----------------------------------------------------------------------------------------------------------------------------------------------------
       end if;  -- instr. conditions
-
       if WB_EN = '1' then
-        regfile(harc_WB)(rd(instr_word_WB)) <= WB_RD;
+        if latch_rf = 1 then
+          RF_res <= WB_RD;
+        end if;
       end if;
     end if;  -- clk
   end process;
@@ -197,9 +243,9 @@ begin
   RS2_Data_IE_wire <= regfile(harc_ID)(rs2(instr_word_ID)) when morph_en = 0 or bypass_rs2 = '0' or harc_ID /= harc_WB else WB_RD;
   RD_Data_IE_wire  <= regfile(harc_ID)(rd(instr_word_ID))  when morph_en = 0 or bypass_rd_read  = '0' or harc_ID /= harc_WB else WB_RD;
 
-  end generate; -- LUTRAM_RF = 0
+  end generate; -- lutram_rf = 0
 
-  RF_LUTRAM : if LUTRAM_RF = 1 generate
+  RF_LUTRAM : if lutram_rf = 1 generate
 
   RF_RD_EN : process(all)  -- synch single state process
   begin
@@ -290,7 +336,7 @@ begin
   end process;
   end generate; -- accl_en = 1
 
-  end generate; -- LUTRAM_RF = 1
+  end generate; -- lutram_rf = 1
 
   RETURN_ADDR_REG : if fetch_stage_en = 1 generate
   RA_ACCESS : process(clk_i) begin

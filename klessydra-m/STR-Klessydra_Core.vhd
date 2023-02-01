@@ -46,7 +46,8 @@ entity klessydra_m_core is
     THREAD_POOL_SIZE_GLOBAL : natural := 4;   -- Indicates the total number of harts on the chip, and not only the ones in the cores
     THREAD_POOL_SIZE        : natural := 1;   -- Changing the TPS to less than "number of pipeline stages-1" is not allowed. And making it bigger than "pipeline stages-1" is okay but not recommended
     cluster_size_ceil       : natural := 1;   -- The cieling bits of that identify the size of the cluster
-    LUTRAM_RF               : natural := 1;   -- Changes the regfile from flip-flop type into BRAM type
+    lutram_rf               : natural := 1;   -- Changes the regfile from flip-flop type into LUTRAM type
+    latch_rf                : natural := 0;   -- Changes the regfile from flip-flop type into Latch type (only works if lutram_rf is set to 0)
     RV32E                   : natural := 0;   -- Regfile size, Can be set to 32 for RV32E being 0 else 16 for RV32E being set to 1
     RV32M                   : natural := 1;   -- Enables the M-extension of the risc-v instruction set
     context_switch          : natural := 0;   -- Enables the context switching between cores
@@ -500,7 +501,8 @@ architecture Klessydra_M of klessydra_m_core is
     THREAD_POOL_SIZE_GLOBAL    : natural;
     THREAD_POOL_SIZE           : natural;
     HET_CLUSTER_S1_CORE        : natural;
-    LUTRAM_RF                  : natural;
+    lutram_rf                  : natural;
+    latch_rf                   : natural;
     RV32E                      : natural;
     RV32M                      : natural;
     context_switch             : natural;
@@ -762,7 +764,7 @@ begin
     end if;
   end process;
 
-  assert (LUTRAM_RF /= debug_en and LUTRAM_RF /= 1) report "Debug-Unit cannot read from a LUTRAM regfile." severity WARNING;
+  assert (lutram_rf /= debug_en and lutram_rf /= 1) report "Debug-Unit cannot read from a LUTRAM regfile." severity WARNING;
 
   instr_addr_o <= pc_IF;
 
@@ -937,7 +939,8 @@ begin
       THREAD_POOL_SIZE_GLOBAL => THREAD_POOL_SIZE_GLOBAL,
       THREAD_POOL_SIZE        => THREAD_POOL_SIZE,
       HET_CLUSTER_S1_CORE     => HET_CLUSTER_S1_CORE,
-      LUTRAM_RF               => LUTRAM_RF,
+      lutram_rf               => lutram_rf,
+      latch_rf                => latch_rf,
       RV32E                   => RV32E,
       RV32M                   => RV32M,
       context_switch          => context_switch,

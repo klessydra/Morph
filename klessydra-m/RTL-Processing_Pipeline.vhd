@@ -27,7 +27,8 @@ entity Pipeline is
     THREAD_POOL_SIZE_GLOBAL    : natural;
     THREAD_POOL_SIZE           : natural;
     HET_CLUSTER_S1_CORE        : natural;
-    LUTRAM_RF                  : natural;
+    lutram_rf                  : natural;
+    latch_rf                   : natural;
     RV32E                      : natural;
     RV32M                      : natural;
     context_switch             : natural;
@@ -758,7 +759,8 @@ architecture Pipe of Pipeline is
   component REGISTERFILE is
   generic(
     THREAD_POOL_SIZE           : natural;
-    LUTRAM_RF                  : natural;
+    lutram_rf                  : natural;
+    latch_rf                   : natural;
     morph_en                   : natural;
     fetch_stage_en             : natural;
     accl_en                    : natural;
@@ -1214,7 +1216,8 @@ begin
   RF : REGISTERFILE
   generic map(
     THREAD_POOL_SIZE           => THREAD_POOL_SIZE,
-    LUTRAM_RF                  => LUTRAM_RF,
+    lutram_rf                  => lutram_rf,
+    latch_rf                   => latch_rf,
     morph_en                   => morph_en,
     fetch_stage_en             => fetch_stage_en,
     accl_en                    => accl_en,
