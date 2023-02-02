@@ -704,7 +704,7 @@ begin
       end if;
     end loop;
     if HET_CLUSTER_S1_CORE = 1 then
-      if sw_irq_i(3) = '1' or latch_count_sw_irq(0) = '1' then
+      if sw_irq_i(THREAD_POOL_SIZE_GLOBAL-1) = '1' or latch_count_sw_irq(0) = '1' then
         ext_sw_irq_het_core(0) <= '1';
       else
         ext_sw_irq_het_core(0) <= '0';
