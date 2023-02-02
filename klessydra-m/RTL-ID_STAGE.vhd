@@ -212,6 +212,15 @@ architecture DECODE of ID_STAGE is
     return h;
   end function add_vect_bits;
 
+  function or_vect_bits(input_vector : std_logic_vector) return std_logic is
+    variable result : std_logic := '0';
+  begin
+    for i in input_vector'range loop
+      result := result or input_vector(i);
+    end loop;
+    return result;
+  end function or_vect_bits;
+
 
 begin
 
@@ -1177,7 +1186,7 @@ begin
     OPCODE_wires      := OPCODE(instr_word_ID); 
     busy_ID           <= '0';
     ls_parallel_exec  <= '0' when busy_LS = '1' and instr_rvalid_ID_int = '1' else '1';
-    dsp_parallel_exec <= '0' when unsigned(busy_DSP) /= 0 and instr_rvalid_ID_int = '1' else '1';
+    dsp_parallel_exec <= '0' when or_vect_bits(busy_DSP) = '1' and instr_rvalid_ID_int = '1' else '1';
     dsp_to_jump_wire  <= '1' when OPCODE_wires = KDSP and busy_DSP(harc_ID_to_DSP) = '1' else '0';
     -- A data deoendency is only valid to make a stall when the current dependent instruction is not flushed
     if core_busy_IE = '1' or core_busy_LS = '1' or ls_parallel_exec = '0'  or dsp_parallel_exec = '0' or (data_dependency = '1' and flush_hart_ID(harc_ID) = '0') or branch_stall = '1' or jalr_stall = '1' then
