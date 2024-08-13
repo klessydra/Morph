@@ -190,6 +190,7 @@ begin
     end if;
   end process;
 
+  harc_FETCH                 <=  0 ;
   branch_FETCH               <= '0';
   jump_FETCH                 <= '0';
   branch_predict_taken_ID    <= '0';

@@ -43,31 +43,32 @@ use work.riscv_klessydra.all;
 -- core entity declaration --
 entity klessydra_top is
   generic (
-    THREAD_POOL_SIZE_GLOBAL : natural := 4;   -- Indicates the total number of harts on the chip, and not only the ones in the cores
     THREAD_POOL_SIZE        : natural := 3;   -- Changing the TPS to less than "number of pipeline stages-1" is not allowed. And making it bigger than "pipeline stages-1" is okay but not recommended
+    THREAD_POOL_SIZE_GLOBAL : natural := THREAD_POOL_SIZE+1;   -- Indicates the total number of harts on the chip, and not only the ones in the cores
     cluster_size_ceil       : natural := 1;   -- The cieling bits of that identify the size of the cluster
-    lutram_rf               : natural := 1;   -- Changes the regfile from flip-flop type into BRAM type
+    lutram_rf               : natural := 1;   -- Changes the regfile from flip-flop type into LUTRAM type
     latch_rf                : natural := 0;   -- Changes the regfile from flip-flop type into Latch type (only works if lutram_rf is set to 0)
     RV32E                   : natural := 0;   -- Regfile size, Can be set to 32 for RV32E being 0 else 16 for RV32E being set to 1
     RV32M                   : natural := 1;   -- Enables the M-extension of the risc-v instruction set
+    RV32F                   : natural := 1;   -- Enables the F-extension of the risc-v instruction set
     context_switch          : natural := 0;   -- Enables the context switching between cores
-    morph_en                : natural := 0;   -- Enables the generation of the logic that allows processor to morph from an IMT to a single core processor
-    fetch_stage_en          : natural := 0;   -- Enables the generation of a fetch stage buffer, else the incoming instrution will go directly to the decode stage.
-    branch_predict_en       : natural := 0;   -- This enables the branch predictor
-    btb_en                  : natural := 0;   -- Enables the BTB instead of the single bit predictor
+    morph_en                : natural := 1;   -- Enables the generation of the logic that allows processor to morph from an IMT to a single core processor
+    fetch_stage_en          : natural := 1;   -- Enables the generation of a fetch stage buffer, else the incoming instrution will go directly to the decode stage.
+    branch_predict_en       : natural := 1;   -- This enables the branch predictor
+    btb_en                  : natural := 1;   -- Enables the BTB instead of the single bit predictor
     btb_len                 : natural := 6;   -- Indicates the number of entries in the btb which is 2^btb_len
     superscalar_exec_en     : natural := 1;   -- Enables superscalar execution when set to 1, else the stall of the pipeline will depend on tha latency of the instruction
-    accl_en                 : natural := 1;   -- Enables the generation of the general purpose accelerator
-    replicate_accl_en       : natural := 1;   -- Set to 1 to replicate the accelerator for every thread
-    multithreaded_accl_en   : natural := 1;   -- Set to 1 to let the replicated accelerator share the functional units (note: replicate_accl_en must be set to '1')
+    accl_en                 : natural := 0;   -- Enables the generation of the general purpose accelerator
+    replicate_accl_en       : natural := 0;   -- Set to 1 to replicate the accelerator for every thread
+    multithreaded_accl_en   : natural := 0;   -- Set to 1 to let the replicated accelerator share the functional units (note: replicate_accl_en must be set to '1')
     SPM_NUM                 : natural := 3;   -- The number of scratchpads available "Minimum allowed is two"
     Addr_Width              : natural := 13;  -- This address is for scratchpads. Setting this will make the size of the spm to be: "2^Addr_Width -1"
     SPM_STRT_ADDR           : std_logic_vector(31 downto 0) := x"1000_0000";  -- This is starting address of the spms, it shouldn't overlap any sections in the memory map
-    SIMD                    : natural := 2;   -- Changing the SIMD, would change the number of the functional units in the dsp, and the number of banks in the spms (can be power of 2 only e.g. 1,2,4,8)
+    SIMD                    : natural := 1;   -- Changing the SIMD, would change the number of the functional units in the dsp, and the number of banks in the spms (can be power of 2 only e.g. 1,2,4,8)
     MCYCLE_EN               : natural := 0;   -- Can be set to 1 or 0 only. Setting to zero will disable MCYCLE and MCYCLEH
     MINSTRET_EN             : natural := 0;   -- Can be set to 1 or 0 only. Setting to zero will disable MINSTRET and MINSTRETH
     MHPMCOUNTER_EN          : natural := 0;   -- Can be set to 1 or 0 only. Setting to zero will disable all performance counters except "MCYCLE/H" and "MINSTRET/H"
-    count_all               : natural := 1;   -- Perfomance counters count for all the harts instead of there own hart
+    count_all               : natural := 0;   -- Perfomance counters count for all the harts instead of there own hart
     debug_en                : natural := 0;   -- Generates the debug unit
     tracer_en               : natural := 0;   -- Enables the generation of the instruction tracer disable in extremely long simulations in order to save storage space
      ----------------------------------------------------------------------------------------
@@ -200,6 +201,7 @@ architecture Klessydra of klessydra_top is
     latch_rf                : natural;
     RV32E                   : natural;
     RV32M                   : natural;
+    RV32F                   : natural;
     context_switch          : natural;
     morph_en                : natural;
     fetch_stage_en          : natural;
@@ -408,6 +410,7 @@ begin
     latch_rf                => latch_rf,
     RV32E                   => RV32E,
     RV32M                   => RV32M,
+    RV32F                   => RV32F,
     context_switch          => context_switch,
     morph_en                => morph_en,
     fetch_stage_en          => fetch_stage_en,

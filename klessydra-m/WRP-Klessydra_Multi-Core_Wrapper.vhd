@@ -26,9 +26,9 @@ entity klessydra_heterogeneous_cluster is
     btb_en                : natural := 0;   -- Enables the BTB instead of the single bit predictor
     btb_len               : natural := 6;   -- Indicates the number of entries in the btb which is 2^btb_len
     superscalar_exec_en   : natural := 1;   -- Enables superscalar execution when set to 1, else the stall of the pipeline will depend on tha latency of the instruction
-    accl_en               : natural := 1;   -- Enables the generation of the general purpose accelerator
-    replicate_accl_en     : natural := 1;   -- Set to 1 to replicate the accelerator for every thread
-    multithreaded_accl_en : natural := 1;   -- Set to 1 to let the replicated accelerator share the functional units (note: replicate_accl_en must be set to '1')
+    accl_en               : natural := 0;   -- Enables the generation of the general purpose accelerator
+    replicate_accl_en     : natural := 0;   -- Set to 1 to replicate the accelerator for every thread
+    multithreaded_accl_en : natural := 0;   -- Set to 1 to let the replicated accelerator share the functional units (note: replicate_accl_en must be set to '1')
     SPM_NUM               : natural := 4;   -- The number of scratchpads available "Minimum allowed is two"
     Addr_Width            : natural := 13;  -- This address is for scratchpads. Setting this will make the size of the spm to be: "2^Addr_Width -1"
     SPM_STRT_ADDR         : std_logic_vector(31 downto 0) := x"1000_0000";  -- This is starting address of the spms, it shouldn't overlap any sections in the memory map

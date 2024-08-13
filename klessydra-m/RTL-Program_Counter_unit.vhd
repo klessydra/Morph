@@ -301,6 +301,8 @@ begin
   sleep_logic_dis : if morph_en = 0 generate
 
     context_switch_halt <= (others => '0');
+    harc_sleep_wire     <= (others => '0');
+    harc_sleep          <= (others => '0');
 
     hardware_context_counter : process(clk_i, rst_ni)
     begin
