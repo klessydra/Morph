@@ -34,7 +34,7 @@ entity IE_STAGE is
     RV32M                     : natural;
     HET_CLUSTER_S1_CORE       : natural;
     TPS_CEIL                  : natural;
-    --TPS_GLBL_CEIL             : natural;
+    --TPS_GLBL_CEIL           : natural;
     RF_CEIL                   : natural
   );
   port (
@@ -108,7 +108,6 @@ entity IE_STAGE is
     served_pending_irq        : out std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     ebreak_instr              : out std_logic;
     absolute_jump             : out std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
-    instr_rvalid_WB           : out std_logic;
     instr_word_IE_WB          : out std_logic_vector (31 downto 0);
     IE_WB_EN                  : out std_logic;
     IE_WB_EN_wire             : out std_logic;
@@ -126,6 +125,7 @@ entity IE_STAGE is
     IE_flush_hart_ID          : out std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     halt_update_IE            : out std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     branch_taken              : out std_logic;
+    branch_hit                : out std_logic;
     branch_predict_taken_IE   : in  std_logic
   );
 end entity;  ------------------------------------------
@@ -218,6 +218,23 @@ architecture EXECUTE of IE_STAGE is
   signal external_counter    : std_logic_vector(63 downto 0);  -- RDTIME
   --signal instruction_counter : std_logic_vector(63 downto 0);  -- RDINSTRET
 
+  component divider is
+    generic (
+      divider_implementation : natural := 4;
+      size                   : natural := 32
+    );
+    Port (
+      reset                 : in  std_logic;
+      clk                   : in  std_logic;
+      dividend_i            : in  std_logic_vector(size-1 downto 0);
+      divisor_i             : in  std_logic_vector(size-1 downto 0);
+      div_enable_i          : in  std_logic;
+      division_finished_out : out std_logic;
+      result_div            : out std_logic_vector(size-1 downto 0); -- Decomment if you want to see the result
+      result_rem            : out std_logic_vector(size-1 downto 0) -- Decomment if you want to see the result
+    );
+  end component;
+
   function rs1 (signal instr : in std_logic_vector(31 downto 0)) return integer is
   begin
     return to_integer(unsigned(instr(15+(RF_CEIL-1) downto 15)));
@@ -247,6 +264,28 @@ architecture EXECUTE of IE_STAGE is
   end function add_vect_bits;
 
 begin
+
+  divider_inst : divider
+    generic map(
+      divider_implementation => 5,
+      size                   => 32
+    )
+    port map(
+      clk                    => clk_i,
+      reset                  => rst_ni,
+      dividend_i             => RS1_DATA_IE,
+      divisor_i              => RS2_DATA_IE,
+      div_enable_i           => decoded_instruction_IE(DIVU_bit_position) or
+                                decoded_instruction_IE(DIV_bit_position)  or
+                                decoded_instruction_IE(REMU_bit_position) or
+                                decoded_instruction_IE(REM_bit_position),  
+      division_finished_out  => open,
+      result_div             => open,
+      result_rem             => open
+      --result_div             => res(31 downto 0),
+      --result_rem             => res(63 downto 32)
+    );
+
 
   T13_switch <= '1'                                     when
                 context_switch                =  1      and
@@ -290,6 +329,9 @@ begin
       halt_update_IE         <= (others => '0');
       halt_update_IE_pending <= (others => '0');
     elsif rising_edge(clk_i) then
+      if THREAD_POOL_SIZE /= 1 then
+        S1_switch_routine <= '0';
+      end if;
       IE_WB_EN         <= '0';
       MUL_WB_EN        <= '0';
       WB_EN_next_IE    <= '0';
@@ -643,6 +685,7 @@ begin
     --branch prediction signals
     halt_update_IE_wire              <= halt_update_IE_pending and not instr_gnt_i; -- latch the halt wire as long as we don't have a valid instr
     branch_taken                     <= '0';
+    branch_hit                       <= branch_instr;
     source_hartid_o                  <= to_integer(unsigned(MHARTID(harc_EXEC)(THREAD_POOL_SIZE_GLOBAL-1 downto 0))); -- AAA change the to TPS_CEIL or TPS_GLBL_CEIL
 
     if RV32M = 1 then
@@ -791,7 +834,8 @@ begin
                 ie_taken_branch_wires      := '1';
               end if;
             else
-              if pass_BRANCH = not branch_predict_taken_IE then
+              if pass_BRANCH = not branch_predict_taken_IE then -- if branch miss
+                branch_hit <= '0';
                 flush_hart_int_wire(harc_EXEC) <= '1';
                 if fetch_stage_en = 1 then
                   if CORE_STATE_ID(DUAL_HART_MODE) = '1' then
@@ -813,7 +857,7 @@ begin
             --ie_csr_wdata_i <= RS2_Data_IE;
             --csr_addr_i     <= MIP_ADDR;
             --source_hartid_o <= harc_EXEC;
-            --csr_op_i <= CSRRW;
+            --csr_op_i <= CSRRW; 0x0000FF00
             if data_addr_internal_IE(31 downto 9) = x"0000F" & "111" then
               if halt_IE = '0' then
                 if HET_CLUSTER_S1_CORE = 1 then -- if the current core is the S1 core in the Het. cluster
