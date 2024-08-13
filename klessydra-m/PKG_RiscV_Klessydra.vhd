@@ -190,7 +190,7 @@ package riscv_klessydra is
   constant KSVMULPSSC_pattern : std_logic_vector(DSP_UNIT_INSTR_SET_SIZE-1 downto 0) := "0001000000000000000000000000";
   constant KSVMULPSRF_pattern : std_logic_vector(DSP_UNIT_INSTR_SET_SIZE-1 downto 0) := "0010000000000000000000000000";
   constant KDOTPS_pattern     : std_logic_vector(DSP_UNIT_INSTR_SET_SIZE-1 downto 0) := "0100000000000000000000000000";
-  constant KADDVCLIP_pattern      : std_logic_vector(DSP_UNIT_INSTR_SET_SIZE-1 downto 0) := "1000000000000000000000000000";
+  constant KADDVCLIP_pattern  : std_logic_vector(DSP_UNIT_INSTR_SET_SIZE-1 downto 0) := "1000000000000000000000000000";
   ----------------------------------------------------------------------------------------------------------
 
   constant ADDI_bit_position    : natural := 0;
