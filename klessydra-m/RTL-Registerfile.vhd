@@ -27,10 +27,12 @@ use work.riscv_klessydra.all;
 entity REGISTERFILE is
   generic(
     THREAD_POOL_SIZE           : natural;
+    RV32F                      : natural;
     lutram_rf                  : natural;
     latch_rf                   : natural;
     morph_en                   : natural;
     fetch_stage_en             : natural;
+    fp_size                    : natural;
     accl_en                    : natural;
     SPM_NUM                    : natural;
     Addr_Width                 : natural;
@@ -50,11 +52,15 @@ entity REGISTERFILE is
     bypass_rs1              : in  std_logic;
     bypass_rs2              : in  std_logic;
     bypass_rd_read          : in  std_logic;
+    bypass_fp_rs1           : in  std_logic;
+    bypass_fp_rs2           : in  std_logic;
+    bypass_fp_rd_read       : in  std_logic;
     jalr_stall              : in  std_logic;
     branch_stall            : in  std_logic;
     core_busy_IE            : in  std_logic;
     core_busy_LS            : in  std_logic;
     ls_parallel_exec        : in  std_logic;
+    fpu_parallel_exec       : in  std_logic;
     dsp_parallel_exec       : in  std_logic;
     dsp_to_jump_wire        : in  std_logic;
     instr_rvalid_ID         : in  std_logic;
@@ -63,13 +69,19 @@ entity REGISTERFILE is
     LS_WB_EN                : in  std_logic;
     IE_WB_EN                : in  std_logic;
     MUL_WB_EN               : in  std_logic;
+    FP_LS_WB_EN             : in  std_logic;
+    FP_RES_WB_EN            : in  std_logic;
     IE_WB                   : in  std_logic_vector(31 downto 0);
     MUL_WB                  : in  std_logic_vector(31 downto 0);
     LS_WB                   : in  std_logic_vector(31 downto 0);
+    FP_LS_WB                : in  std_logic_vector(fp_size-1 downto 0);
+    FP_RES_WB               : in  std_logic_vector(fp_size-1 downto 0);
     instr_word_LS_WB        : in  std_logic_vector(31 downto 0);
     instr_word_IE_WB        : in  std_logic_vector(31 downto 0);
+    instr_word_FP_RES_WB    : in  std_logic_vector(fp_size-1 downto 0);
     harc_LS_WB              : in  natural range THREAD_POOL_SIZE-1 downto 0;
     harc_IE_WB              : in  natural range THREAD_POOL_SIZE-1 downto 0;
+    harc_FP_RES_WB          : in  natural range THREAD_POOL_SIZE-1 downto 0;
     zero_rs1                : out std_logic;
     zero_rs2                : out std_logic;
     pass_BEQ                : out std_logic;
@@ -81,12 +93,16 @@ entity REGISTERFILE is
     RS1_Data_IE             : out std_logic_vector(31 downto 0);
     RS2_Data_IE             : out std_logic_vector(31 downto 0);
     RD_Data_IE              : out std_logic_vector(31 downto 0);
+    RS1_Data_FLOAT          : out std_logic_vector(fp_size-1 downto 0);
+    RS2_Data_FLOAT          : out std_logic_vector(fp_size-1 downto 0);
+    RD_Data_FLOAT           : out std_logic_vector(fp_size-1 downto 0);
     return_address          : out array_2d(THREAD_POOL_SIZE-1 downto 0)(31 downto 0);
     rs1_to_sc               : out std_logic_vector(SPM_ADDR_WID-1 downto 0);
     rs2_to_sc               : out std_logic_vector(SPM_ADDR_WID-1 downto 0);
     rd_to_sc                : out std_logic_vector(SPM_ADDR_WID-1 downto 0);
     data_addr_internal_IE   : out std_logic_vector(31 downto 0);
-    regfile                 : out array_3d(THREAD_POOL_SIZE-1 downto 0)(RF_SIZE-1 downto 0)(31 downto 0)
+    regfile                 : out array_3d(THREAD_POOL_SIZE-1 downto 0)(RF_SIZE-1 downto 0)(31 downto 0);
+    fp_regfile              : out array_3d(THREAD_POOL_SIZE-1 downto 0)(RF_SIZE-1 downto 0)(fp_size-1 downto 0)
     );
 end entity;  ------------------------------------------
 
@@ -96,10 +112,14 @@ architecture RF of REGISTERFILE is
 
   subtype harc_range is natural range THREAD_POOL_SIZE - 1 downto 0;
 
-  signal RF_res          : std_logic_vector(31 downto 0);
-  signal WB_EN_lat       : std_logic;
-  signal harc_LAT        : harc_range;
-  signal instr_word_LAT  : std_logic_vector(31 downto 0);
+  signal RF_res            : std_logic_vector(31 downto 0);
+  signal FP_RF_res         : std_logic_vector(fp_size-1 downto 0);
+  signal WB_EN_lat         : std_logic;
+  signal FP_WB_EN_lat      : std_logic;
+  signal harc_LAT          : harc_range;
+  signal harc_FP_LAT       : harc_range;
+  signal instr_word_LAT    : std_logic_vector(31 downto 0);
+  signal instr_word_FP_LAT : std_logic_vector(31 downto 0);
 
   signal regfile_lutram_rs1 : array_2d((THREAD_POOL_SIZE*RF_SIZE)-1 downto 0)(31 downto 0);
   signal regfile_lutram_rs2 : array_2d((THREAD_POOL_SIZE*RF_SIZE)-1 downto 0)(31 downto 0);
@@ -121,15 +141,24 @@ architecture RF of REGISTERFILE is
   signal RS2_Data_IE_wire       : std_logic_vector(31 downto 0);
   signal RD_Data_IE_wire        : std_logic_vector(31 downto 0);
 
+  signal RS1_Data_FLOAT_wire    : std_logic_vector(fp_size-1 downto 0);
+  signal RS2_Data_FLOAT_wire    : std_logic_vector(fp_size-1 downto 0);
+  signal RD_Data_FLOAT_wire     : std_logic_vector(fp_size-1 downto 0);
+
   -- instruction operands
   signal RS1_Addr_IE            : std_logic_vector(4 downto 0);   -- debugging signals
   signal RS2_Addr_IE            : std_logic_vector(4 downto 0);   -- debugging signals
   signal RD_Addr_IE             : std_logic_vector(4 downto 0);   -- debugging signals
   signal RD_EN                  : std_logic;
   signal WB_RD                  : std_logic_vector(31 downto 0);
+  signal FP_WB_RD               : std_logic_vector(fp_size-1 downto 0);
   signal WB_EN                  : std_logic;
+  signal FP_WB_EN               : std_logic;
   signal harc_WB                : harc_range;
   signal instr_word_WB          : std_logic_vector(31 downto 0);
+
+  signal harc_FP_WB             : harc_range;
+  signal instr_word_FP_WB       : std_logic_vector(31 downto 0);
 
   function rs1 (signal instr : in std_logic_vector(31 downto 0)) return integer is
   begin
@@ -164,11 +193,16 @@ begin
 
   RF_WR_ACCESS : process(all)  -- synch single state process
   begin
-      for h in harc_range loop
+      for h in harc_range loop -- hardwire register 'x0' to 0
         regfile(h)(0) <= (others => '0');
       end loop;
       if WB_EN_lat = '1' then
         regfile(harc_LAT)(rd(instr_word_LAT)) <= RF_res;
+      end if;
+      if RV32F = 1 then
+        if FP_WB_EN_lat = '1' then
+          fp_regfile(harc_LAT)(rd(instr_word_FP_LAT)) <= FP_RF_res;
+        end if;
       end if;
   end process;
 
@@ -189,6 +223,11 @@ begin
       if WB_EN = '1' then
         regfile(harc_WB)(rd(instr_word_WB)) <= WB_RD;
       end if;
+      if RV32F = 1 then
+        if FP_WB_EN = '1' then
+          fp_regfile(harc_FP_WB)(rd(instr_word_FP_WB)) <= FP_WB_RD;
+        end if;
+      end if;
     end if;  -- clk
   end process;
 
@@ -200,17 +239,21 @@ begin
     if rst_ni = '0' then
       WB_EN_lat <= '0';
       harc_LAT <= THREAD_POOL_SIZE-1;
-      instr_word_LAT <= (others => '0');
+      instr_word_LAT    <= (others => '0');
+      instr_word_FP_LAT <= (others => '0');
     elsif rising_edge(clk_i) then
-      harc_LAT <= harc_WB;
-      instr_word_LAT <= instr_word_WB;
+      harc_LAT    <= harc_WB;
+      harc_FP_LAT <= harc_FP_WB;
+      instr_word_LAT    <= instr_word_WB;
+      instr_word_FP_LAT <= instr_word_FP_WB;
       WB_EN_lat <= WB_EN;
-      if core_busy_IE = '1' or core_busy_LS = '1' or ls_parallel_exec = '0'  or dsp_parallel_exec = '0' then -- the instruction pipeline is halted
+      if core_busy_IE = '1' or core_busy_LS = '1' or ls_parallel_exec = '0' or fpu_parallel_exec = '0' or dsp_parallel_exec = '0' then -- the instruction pipeline is halted
       elsif instr_rvalid_ID_int = '0' then -- wait for a valid instruction
       else  -- process the incoming instruction 
 
-        -- AAA create the bypass here for this as well
-        data_addr_internal_IE <= std_logic_vector(signed(regfile(harc_ID)(rs1(instr_word_ID))) + signed(S_immediate(instr_word_ID)));
+        data_addr_internal_IE <= std_logic_vector(signed(regfile(harc_ID)(rs1(instr_word_ID))) + signed(S_immediate(instr_word_ID))) -- normal condition
+                                when morph_en = 0 or bypass_rs1 = '0' or harc_ID /= harc_WB else 
+                                std_logic_vector(signed(WB_RD) + signed(S_immediate(instr_word_ID))); -- else bypass condition
 
         ----- REGISTERFILE READ IS DONE HERE --------------------------------------------------------------------------------------------------------------
          RS1_Data_IE <= RS1_Data_IE_wire; 
@@ -223,11 +266,18 @@ begin
             RD_Data_IE <= regfile(harc_ID)(0);
           end if;
         end if;
+
+        if RV32F = 1 then
+          RS1_Data_FLOAT <= RS1_Data_FLOAT_wire; 
+          RS2_Data_FLOAT <= RS2_Data_FLOAT_wire;
+          RD_Data_FLOAT  <= RD_Data_FLOAT_wire;
+        end if;
+
        -- pragma translate_off
-        RD_Data_IE  <= regfile(harc_ID)(rd(instr_word_ID)) when  morph_en = 0 or bypass_rd_read = '0' or harc_ID /= harc_WB else WB_RD; -- reading the 'rd' data here is only for debugging purposes if the acclerator is disabled
-        RS1_Addr_IE <= std_logic_vector(to_unsigned(rs1(instr_word_ID), 5)); -- debugging signals
-        RS2_Addr_IE <= std_logic_vector(to_unsigned(rs2(instr_word_ID), 5)); -- debugging signals
-        RD_Addr_IE  <= std_logic_vector(to_unsigned(rd(instr_word_ID), 5)); -- debugging signals
+        RD_Data_IE    <= regfile(harc_ID)(rd(instr_word_ID)) when  morph_en = 0 or bypass_rd_read = '0' or harc_ID /= harc_WB else WB_RD; -- reading the 'rd' data here is only for debugging purposes if the acclerator is disabled
+        RS1_Addr_IE   <= std_logic_vector(to_unsigned(rs1(instr_word_ID), 5)); -- debugging signals
+        RS2_Addr_IE   <= std_logic_vector(to_unsigned(rs2(instr_word_ID), 5)); -- debugging signals
+        RD_Addr_IE    <= std_logic_vector(to_unsigned(rd(instr_word_ID), 5)); -- debugging signals
        -- pragma translate_on
        ----------------------------------------------------------------------------------------------------------------------------------------------------
       end if;  -- instr. conditions
@@ -239,9 +289,13 @@ begin
     end if;  -- clk
   end process;
 
-  RS1_Data_IE_wire <= regfile(harc_ID)(rs1(instr_word_ID)) when morph_en = 0 or bypass_rs1 = '0' or harc_ID /= harc_WB else WB_RD; 
+  RS1_Data_IE_wire <= regfile(harc_ID)(rs1(instr_word_ID)) when morph_en = 0 or bypass_rs1 = '0' or harc_ID /= harc_WB else WB_RD;
   RS2_Data_IE_wire <= regfile(harc_ID)(rs2(instr_word_ID)) when morph_en = 0 or bypass_rs2 = '0' or harc_ID /= harc_WB else WB_RD;
   RD_Data_IE_wire  <= regfile(harc_ID)(rd(instr_word_ID))  when morph_en = 0 or bypass_rd_read  = '0' or harc_ID /= harc_WB else WB_RD;
+
+  RS1_Data_FLOAT_wire <= fp_regfile(harc_ID)(rs1(instr_word_ID)) when RV32F = 1 and (morph_en = 0 or bypass_fp_rs1 = '0' or harc_ID /= harc_WB) else FP_WB_RD;
+  RS2_Data_FLOAT_wire <= fp_regfile(harc_ID)(rs2(instr_word_ID)) when RV32F = 1 and (morph_en = 0 or bypass_fp_rs2 = '0' or harc_ID /= harc_WB) else FP_WB_RD;
+  RD_Data_FLOAT_wire  <= fp_regfile(harc_ID)(rd(instr_word_ID))  when RV32F = 1 and (morph_en = 0 or bypass_fp_rd_read = '0' or harc_ID /= harc_WB) else FP_WB_RD;
 
   end generate; -- lutram_rf = 0
 
@@ -250,7 +304,7 @@ begin
   RF_RD_EN : process(all)  -- synch single state process
   begin
     RD_EN <= '0';
-    if core_busy_IE = '1' or core_busy_LS = '1' or ls_parallel_exec = '0'  or dsp_parallel_exec = '0' or data_dependency = '1' then -- the instruction pipeline is halted
+    if core_busy_IE = '1' or core_busy_LS = '1' or ls_parallel_exec = '0' or fpu_parallel_exec = '0' or dsp_parallel_exec = '0' or data_dependency = '1' then -- the instruction pipeline is halted
     elsif instr_rvalid_ID_int = '0' then -- wait for a valid instruction
     else  -- process the incoming instruction 
       RD_EN <= '1';
@@ -267,8 +321,8 @@ begin
         RS2_Data_IE_wire <= (others => '0');
       end if;
       if accl_en = 1 then
-        if rs1(instr_word_ID) /= 0 then
-          RD_Data_IE_wire <= regfile_lutram_rd(32*harc_ID+rd(instr_word_ID)) when morph_en = 0 or bypass_rd_read = '0' or harc_ID /= harc_WB else WB_RD; -- only the DSP unit reads the accelerator
+        if rd(instr_word_ID) /= 0 then
+          RD_Data_IE_wire <= regfile_lutram_rd(32*harc_ID+rd(instr_word_ID)) when bypass_rd_read = '0' or harc_ID /= harc_WB else WB_RD; -- only the DSP unit reads the accelerator
         else
           RD_Data_IE_wire <= (others => '0');
         end if;
@@ -284,6 +338,13 @@ begin
       else
         RS2_Data_IE_wire <= (others => '0');
       end if;
+      if accl_en = 1 then
+        if rd(instr_word_ID) /= 0 then
+          RD_Data_IE_wire <= regfile_lutram_rd(32*harc_ID+rd(instr_word_ID));
+        else
+          RD_Data_IE_wire <= (others => '0');
+        end if;
+      end if;
     end if;
 
   end process;
@@ -292,11 +353,11 @@ begin
   begin
     if rising_edge(clk_i) then
       if RD_EN = '1' then 
-        -- AAA create the bypass here for this as well
-        data_addr_internal_IE <= std_logic_vector(signed(regfile_lutram_rs1(32*harc_ID+rs1(instr_word_ID))) + signed(S_immediate(instr_word_ID)));
+        data_addr_internal_IE <= std_logic_vector(signed(regfile_lutram_rs1(32*harc_ID+rs1(instr_word_ID))) + signed(S_immediate(instr_word_ID)))
+                                when morph_en = 0 or bypass_rs1 = '0' or harc_ID /= harc_WB else 
+                                std_logic_vector(signed(WB_RD) + signed(S_immediate(instr_word_ID))); -- else bypass condition
         RS1_Data_IE <= RS1_Data_IE_wire;
       -- pragma translate_off
-       RD_Data_IE  <= regfile_lutram_rs1(32*harc_ID+rd(instr_word_ID)); -- reading the 'rd' data here is only for debugging purposes when the acclerator is disabled
        RS1_Addr_IE <= std_logic_vector(to_unsigned(rs1(instr_word_ID), 5)); -- debugging signals
        RS2_Addr_IE <= std_logic_vector(to_unsigned(rs2(instr_word_ID), 5)); -- debugging signals
        RD_Addr_IE  <= std_logic_vector(to_unsigned(rd(instr_word_ID), 5)); -- debugging signals
@@ -328,6 +389,12 @@ begin
         if RD_EN = '1' then
           RD_Data_IE <= RD_Data_IE_wire;
         end if;  -- instr. conditions
+      elsif accl_en = 0 then
+        if RD_EN = '1' then
+          -- pragma translate_off
+           RD_Data_IE  <= regfile_lutram_rd(32*harc_ID+rd(instr_word_ID)) when bypass_rd_read = '0' or harc_ID /= harc_WB else WB_RD; -- reading the 'rd' data here is only for debugging purposes when the acclerator is disabled
+          -- pragma translate_on
+        end if;  -- instr. conditions
       end if;
       if WB_EN = '1' then
         regfile_lutram_rd(32*harc_WB+rd(instr_word_WB)) <= WB_RD;
@@ -354,10 +421,14 @@ begin
 -- Stage WB - (WRITEBACK)
 -----------------------------------------------------------------------------------------------------
 
-  harc_WB <= harc_LS_WB when LS_WB_EN = '1' else harc_IE_WB;
-  instr_word_WB <= instr_word_LS_WB when LS_WB_EN = '1' else instr_word_IE_WB;
-  WB_EN <= LS_WB_EN or IE_WB_EN or MUL_WB_EN;
-  WB_RD <= LS_WB when LS_WB_EN = '1' else MUL_WB when MUL_WB_EN = '1' else IE_WB;  
+  instr_word_WB    <= instr_word_LS_WB when LS_WB_EN = '1' else instr_word_IE_WB;
+  harc_WB          <= harc_LS_WB when LS_WB_EN = '1' else harc_IE_WB;
+  WB_EN            <= LS_WB_EN or IE_WB_EN or MUL_WB_EN;
+  WB_RD            <= LS_WB when LS_WB_EN = '1' else MUL_WB when MUL_WB_EN = '1' else IE_WB;  
+  instr_word_FP_WB <= instr_word_LS_WB when FP_LS_WB_EN else instr_word_FP_RES_WB;
+  harc_FP_WB       <= harc_LS_WB when FP_LS_WB_EN else harc_FP_RES_WB;
+  FP_WB_EN         <= FP_LS_WB_EN or FP_RES_WB_EN;
+  FP_WB_RD         <= FP_LS_WB when FP_LS_WB_EN else FP_RES_WB when FP_RES_WB_EN;
 
 --------------------------------------------------------------------- end of WB Stage ----------------
 ------------------------------------------------------------------------------------------------------
@@ -383,7 +454,7 @@ begin
       zero_rs1  <= '0';
       zero_rs2  <= '0';
     elsif rising_edge(clk_i) then
-      if core_busy_IE = '1' or core_busy_LS = '1' or ls_parallel_exec = '0'  or dsp_parallel_exec = '0' or data_dependency = '1' then -- the instruction pipeline is halted
+      if core_busy_IE = '1' or core_busy_LS = '1' or ls_parallel_exec = '0' or fpu_parallel_exec = '0' or dsp_parallel_exec = '0' or data_dependency = '1' then -- the instruction pipeline is halted
       elsif instr_rvalid_ID_int = '0' then -- wait for a valid instruction
       else  -- process the incoming instruction 
         pass_BEQ  <= '0';
@@ -426,7 +497,7 @@ begin
 --  ╚════██║██╔═══╝ ██║╚██╔╝██║    ██║╚██╔╝██║██╔══██║██╔═══╝ ██╔═══╝ ██╔══╝  ██╔══██╗  --
 --  ███████║██║     ██║ ╚═╝ ██║    ██║ ╚═╝ ██║██║  ██║██║     ██║     ███████╗██║  ██║  --
 --  ╚══════╝╚═╝     ╚═╝     ╚═╝    ╚═╝     ╚═╝╚═╝  ╚═╝╚═╝     ╚═╝     ╚══════╝╚═╝  ╚═╝  --
-------------------------------------------------------------------------------------------                                                           
+------------------------------------------------------------------------------------------
 
   spm_mapper : if accl_en = 1 generate 
   Spm_Addr_Mapping : process(all)

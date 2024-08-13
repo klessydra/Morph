@@ -31,6 +31,7 @@ entity Pipeline is
     latch_rf                   : natural;
     RV32E                      : natural;
     RV32M                      : natural;
+    RV32F                      : natural;
     context_switch             : natural;
     morph_en                   : natural;
     fetch_stage_en             : natural;
@@ -51,6 +52,7 @@ entity Pipeline is
     count_all                  : natural;
     debug_en                   : natural;
     tracer_en                  : natural;
+    fp_size                    : natural;
     --------------------------------
     ACCL_NUM                   : natural;
     FU_NUM                     : natural;
@@ -108,6 +110,7 @@ entity Pipeline is
     jump_instr_lat             : out std_logic;
     branch_instr               : out std_logic;
     branch_instr_lat           : out std_logic;
+    branch_hit                 : out std_logic;
     harc_FETCH                 : out natural range THREAD_POOL_SIZE-1 downto 0;
     harc_ID                    : out natural range THREAD_POOL_SIZE-1 downto 0;
     harc_EXEC                  : out natural range THREAD_POOL_SIZE-1 downto 0;
@@ -133,7 +136,6 @@ entity Pipeline is
     CORE_STATE                 : in  std_logic_vector(THREAD_POOL_BASELINE downto 0);
     IMT_ACTIVE_HARTS           : in  natural;
     halt_update                : out std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
-
     -- clock, reset active low, test enable
     clk_i                      : in  std_logic;
     rst_ni                     : in  std_logic;
@@ -217,6 +219,11 @@ architecture Pipe of Pipeline is
     7 => "execution_7.txt"
   );
 
+  signal RS1_Data_FLOAT         : std_logic_vector(fp_size-1 downto 0);
+  signal RS2_Data_FLOAT         : std_logic_vector(fp_size-1 downto 0);
+  signal RD_Data_FLOAT          : std_logic_vector(fp_size-1 downto 0);
+  signal fp_regfile             : array_3d(THREAD_POOL_SIZE-1 downto 0)(RF_SIZE-1 downto 0)(31 downto 0);
+
   signal rs1_valid_ID           : std_logic;
   signal rs2_valid_ID           : std_logic;
   signal rd_valid_ID            : std_logic;
@@ -231,6 +238,9 @@ architecture Pipe of Pipeline is
   signal bypass_rs1             : std_logic;
   signal bypass_rs2             : std_logic;
   signal bypass_rd_read         : std_logic;
+  signal bypass_fp_rs1          : std_logic;
+  signal bypass_fp_rs2          : std_logic;
+  signal bypass_fp_rd_read      : std_logic;
   signal jalr_stall             : std_logic;
   signal branch_stall           : std_logic;
 
@@ -239,6 +249,7 @@ architecture Pipe of Pipeline is
   signal ie_to_csr              : std_logic_vector(31 downto 0);
   signal ie_csr_wdata_i         : std_logic_vector(31 downto 0);
   signal ie_instr_req           : std_logic;
+  signal float_instr_req        : std_logic;
   signal ls_instr_req           : std_logic;
   signal core_busy_LS           : std_logic;
   signal busy_LS                : std_logic;
@@ -254,6 +265,15 @@ architecture Pipe of Pipeline is
   signal MUL_WB_EN              : std_logic;
   signal MUL_WB_EN_wire         : std_logic;
   signal MUL_WB                 : std_logic_vector(31 downto 0);
+  signal FP_LS_WB_EN            : std_logic;
+  signal FP_LS_WB_EN_wire       : std_logic;
+  signal FP_LS_WB               : std_logic_vector(fp_size-1 downto 0);
+  signal FP_RES_WB_EN           : std_logic;
+  signal FP_RES_WB              : std_logic_vector(fp_size-1 downto 0);
+
+  signal float_flag             : std_logic_vector(4 downto 0);
+  signal harc_FP_RES_WB         : natural range THREAD_POOL_SIZE-1 downto 0;
+  signal busy_FPU               : std_logic;
 
   signal comparator_en : std_logic;
 
@@ -268,14 +288,16 @@ architecture Pipe of Pipeline is
   signal pc_WB     : std_logic_vector(31 downto 0);  -- pc_WB is pc entering stage WB
 
   -- instruction register and instr. propagation registers --
-  signal instr_word_FETCH        : std_logic_vector(31 downto 0);
-  signal instr_word_ID           : std_logic_vector(31 downto 0);  -- latch needed for long-latency program memory
-  signal instr_rvalid_ID         : std_logic;  -- validity bit at ID input
-  signal instr_word_LS_WB        : std_logic_vector(31 downto 0);
-  signal instr_word_IE_WB        : std_logic_vector(31 downto 0);
-  signal decoded_branching_instr : std_logic_vector(BRANCHING_INSTR_SET_SIZE-1 downto 0);
-  signal decoded_instruction_IE  : std_logic_vector(EXEC_UNIT_INSTR_SET_SIZE-1 downto 0);
-  signal decoded_instruction_LS  : std_logic_vector(LS_UNIT_INSTR_SET_SIZE-1 downto 0);
+  signal instr_word_FETCH          : std_logic_vector(31 downto 0);
+  signal instr_word_ID             : std_logic_vector(31 downto 0);  -- latch needed for long-latency program memory
+  signal instr_rvalid_ID           : std_logic;  -- validity bit at ID input
+  signal instr_word_LS_WB          : std_logic_vector(31 downto 0);
+  signal instr_word_IE_WB          : std_logic_vector(31 downto 0);
+  signal instr_word_FP_RES_WB      : std_logic_vector(31 downto 0);
+  signal decoded_branching_instr   : std_logic_vector(BRANCHING_INSTR_SET_SIZE-1 downto 0);
+  signal decoded_instruction_IE    : std_logic_vector(EXEC_UNIT_INSTR_SET_SIZE-1 downto 0);
+  signal decoded_instruction_LS    : std_logic_vector(LS_UNIT_INSTR_SET_SIZE-1 downto 0);
+  signal decoded_instruction_FLOAT : std_logic_vector(FP_UNIT_INSTR_SET_SIZE-1 downto 0);
 
   signal zero_rd                : std_logic;
   signal amo_load_skip          : std_logic;
@@ -310,6 +332,7 @@ architecture Pipe of Pipeline is
   signal return_address     : array_2d(THREAD_POOL_SIZE-1 downto 0)(31 downto 0);
 
   signal ls_parallel_exec   : std_logic;
+  signal fpu_parallel_exec  : std_logic;
   signal dsp_parallel_exec  : std_logic;
   
   signal dsp_to_jump_wire   : std_logic;
@@ -457,6 +480,7 @@ architecture Pipe of Pipeline is
   generic(
     THREAD_POOL_SIZE           : natural;
     RV32M                      : natural;
+    RV32F                      : natural;
     morph_en                   : natural;
     fetch_stage_en             : natural;
     branch_predict_en          : natural;
@@ -503,14 +527,19 @@ architecture Pipe of Pipeline is
     bypass_rs1                 : out std_logic;
     bypass_rs2                 : out std_logic;
     bypass_rd_read             : out std_logic;
+    bypass_fp_rs1              : out std_logic;
+    bypass_fp_rs2              : out std_logic;
+    bypass_fp_rd_read          : out std_logic;
     jalr_stall                 : out std_logic;
     branch_stall               : out std_logic;
     core_busy_IE               : in  std_logic;
     core_busy_LS               : in  std_logic;
     busy_LS                    : in  std_logic;
+    busy_FPU                   : in  std_logic;
     busy_DSP                   : in  std_logic_vector(ACCL_NUM-1 downto 0);
     busy_ID                    : out std_logic;
     ls_parallel_exec           : out std_logic;
+    fpu_parallel_exec          : out std_logic;
     dsp_parallel_exec          : out std_logic;
     dsp_to_jump_wire           : out std_logic;
     dsp_to_jump                : out std_logic_vector(harc_range);
@@ -556,6 +585,8 @@ architecture Pipe of Pipeline is
     PC_offset_ID               : out std_logic_vector(31 downto 0);
     set_branch_condition_ID    : out std_logic;
     zero_rd                    : out std_logic;
+    float_instr_req            : out std_logic; 
+    decoded_instruction_FLOAT  : out std_logic_vector(FP_UNIT_INSTR_SET_SIZE-1 downto 0); 
     flush_hart_ID              : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     branch_predict_taken_ID    : in  std_logic; 
     branch_predict_taken_IE    : out std_logic; 
@@ -569,7 +600,9 @@ architecture Pipe of Pipeline is
   component Load_Store_Unit is
   generic(
     THREAD_POOL_SIZE           : natural;
+    RV32F                      : natural;
     fetch_stage_en             : natural;
+    fp_size                    : natural;
     accl_en                    : natural;
     replicate_accl_en          : natural;
     SIMD                       : natural;
@@ -589,6 +622,7 @@ architecture Pipe of Pipeline is
     RS1_Data_IE                : in  std_logic_vector(31 downto 0);
     RS2_Data_IE                : in  std_logic_vector(31 downto 0);
     RD_Data_IE                 : in  std_logic_vector(31 downto 0);
+    RS2_Data_FLOAT             : in  std_logic_vector(fp_size-1 downto 0);
     instr_word_IE              : in  std_logic_vector(31 downto 0);
     pc_IE                      : in  std_logic_vector(31 downto 0);
     decoded_instruction_LS     : in  std_logic_vector(LS_UNIT_INSTR_SET_SIZE-1 downto 0);
@@ -633,11 +667,14 @@ architecture Pipe of Pipeline is
     ls_sc_write_addr           : out std_logic_vector(Addr_Width-(SIMD_BITS+3)downto 0);
     ls_sc_data_write_wire      : out std_logic_vector(Data_Width-1 downto 0);
     -- WB_Stage Signals
+    instr_word_LS_WB           : out std_logic_vector(31 downto 0);
+    harc_LS_WB                 : out harc_range;
     LS_WB_EN                   : out std_logic;
     LS_WB_EN_wire              : out std_logic;
-    harc_LS_WB                 : out harc_range;
-    instr_word_LS_WB           : out std_logic_vector(31 downto 0);
     LS_WB                      : out std_logic_vector(31 downto 0);
+    FP_LS_WB_EN                : out std_logic;
+    FP_LS_WB_EN_wire           : out std_logic;
+    FP_LS_WB                   : out std_logic_vector(fp_size-1 downto 0);
     -- Data memory interface
     data_req_o                 : out std_logic;
     data_gnt_i                 : in  std_logic;
@@ -752,17 +789,47 @@ architecture Pipe of Pipeline is
     IE_flush_hart_ID          : out std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     halt_update_IE            : out std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     branch_taken              : out std_logic;
+    branch_hit                : out std_logic;
     branch_predict_taken_IE   : in  std_logic
   );
   end component;  ------------------------------------------
 
+  component fpu_top_wrapper is
+  generic(
+    THREAD_POOL_SIZE          : natural;
+    fp_size                   : natural;
+    fp_exp_size               : natural;
+    fp_mnt_size               : natural;
+    fp_bias                   : natural
+  );
+  port(
+    clk_i                     : in  std_logic;
+    rst_ni                    : in  std_logic;
+    float_instr_req           : in  std_logic;
+    harc_EXEC                 : in  natural range THREAD_POOL_SIZE-1 downto 0;
+    instr_word_IE             : in  std_logic_vector(31 downto 0);
+    decoded_instruction_FLOAT : in  std_logic_vector(FP_UNIT_INSTR_SET_SIZE-1 downto 0);
+    RS1_DATA_FLOAT            : in  std_logic_vector(fp_size-1 downto 0);
+    RS2_DATA_FLOAT            : in  std_logic_vector(fp_size-1 downto 0);
+    RD_DATA_FLOAT             : in  std_logic_vector(fp_size-1 downto 0);
+    harc_FP_RES_WB            : out natural range THREAD_POOL_SIZE-1 downto 0;
+    instr_word_FP_RES_WB      : out std_logic_vector(31  downto 0);
+    busy_FPU                  : out std_logic;
+    FP_RES_WB_EN              : out std_logic;
+    FP_RES_WB                 : out std_logic_vector(fp_size-1 downto 0);
+    float_flag                : out std_logic_vector(4 downto 0)
+  );
+  end component;
+
   component REGISTERFILE is
   generic(
     THREAD_POOL_SIZE           : natural;
+    RV32F                      : natural;
     lutram_rf                  : natural;
     latch_rf                   : natural;
     morph_en                   : natural;
     fetch_stage_en             : natural;
+    fp_size                    : natural;
     accl_en                    : natural;
     SPM_NUM                    : natural;
     Addr_Width                 : natural;
@@ -782,11 +849,15 @@ architecture Pipe of Pipeline is
     bypass_rs1                 : in  std_logic;
     bypass_rs2                 : in  std_logic;
     bypass_rd_read             : in  std_logic;
+    bypass_fp_rs1              : in  std_logic;
+    bypass_fp_rs2              : in  std_logic;
+    bypass_fp_rd_read          : in  std_logic;
     jalr_stall                 : in  std_logic;
     branch_stall               : in  std_logic;
     core_busy_IE               : in  std_logic;
     core_busy_LS               : in  std_logic;
     ls_parallel_exec           : in  std_logic;
+    fpu_parallel_exec          : in  std_logic;
     dsp_parallel_exec          : in  std_logic;
     dsp_to_jump_wire           : in  std_logic;
     instr_rvalid_ID            : in  std_logic;
@@ -795,13 +866,19 @@ architecture Pipe of Pipeline is
     LS_WB_EN                   : in  std_logic;
     IE_WB_EN                   : in  std_logic;
     MUL_WB_EN                  : in  std_logic;
+    FP_LS_WB_EN                : in  std_logic;
+    FP_RES_WB_EN               : in  std_logic;
     IE_WB                      : in  std_logic_vector(31 downto 0);
     MUL_WB                     : in  std_logic_vector(31 downto 0);
     LS_WB                      : in  std_logic_vector(31 downto 0);
+    FP_RES_WB                  : in  std_logic_vector(fp_size-1 downto 0);
+    FP_LS_WB                   : in  std_logic_vector(fp_size-1 downto 0);
     instr_word_LS_WB           : in  std_logic_vector(31 downto 0);
     instr_word_IE_WB           : in  std_logic_vector(31 downto 0);
+    instr_word_FP_RES_WB       : in  std_logic_vector(31 downto 0);
     harc_LS_WB                 : in  natural range THREAD_POOL_SIZE-1 downto 0;
     harc_IE_WB                 : in  natural range THREAD_POOL_SIZE-1 downto 0;
+    harc_FP_RES_WB             : in  natural range THREAD_POOL_SIZE-1 downto 0;
     zero_rs1                   : out std_logic;
     zero_rs2                   : out std_logic;
     pass_BEQ                   : out std_logic;
@@ -813,12 +890,16 @@ architecture Pipe of Pipeline is
     RS1_Data_IE                : out std_logic_vector(31 downto 0);
     RS2_Data_IE                : out std_logic_vector(31 downto 0);
     RD_Data_IE                 : out std_logic_vector(31 downto 0);
+    RS1_Data_FLOAT             : out std_logic_vector(fp_size-1 downto 0);
+    RS2_Data_FLOAT             : out std_logic_vector(fp_size-1 downto 0);
+    RD_Data_FLOAT              : out std_logic_vector(fp_size-1 downto 0);
     return_address             : out array_2d(THREAD_POOL_SIZE-1 downto 0)(31 downto 0);
     rs1_to_sc                  : out std_logic_vector(SPM_ADDR_WID-1 downto 0);
     rs2_to_sc                  : out std_logic_vector(SPM_ADDR_WID-1 downto 0);
     rd_to_sc                   : out std_logic_vector(SPM_ADDR_WID-1 downto 0);
     data_addr_internal_IE      : out std_logic_vector(31 downto 0);
-    regfile                    : out array_3d(harc_range)(RF_SIZE-1 downto 0)(31 downto 0)
+    regfile                    : out array_3d(harc_range)(RF_SIZE-1 downto 0)(31 downto 0);
+    fp_regfile                 : out array_3d(THREAD_POOL_SIZE-1 downto 0)(RF_SIZE-1 downto 0)(31 downto 0)
   );
   end component;
 
@@ -928,6 +1009,7 @@ begin
   generic map(
     THREAD_POOL_SIZE           => THREAD_POOL_SIZE,
     RV32M                      => RV32M,
+    RV32F                      => RV32F,
     morph_en                   => morph_en,
     fetch_stage_en             => fetch_stage_en,
     branch_predict_en          => branch_predict_en,
@@ -972,14 +1054,19 @@ begin
     bypass_rs1                 => bypass_rs1,
     bypass_rs2                 => bypass_rs2,
     bypass_rd_read             => bypass_rd_read,
+    bypass_fp_rs1              => bypass_fp_rs1,
+    bypass_fp_rs2              => bypass_fp_rs2,
+    bypass_fp_rd_read          => bypass_fp_rd_read,
     jalr_stall                 => jalr_stall,
     branch_stall               => branch_stall,
     core_busy_IE               => core_busy_IE,
     core_busy_LS               => core_busy_LS,
     busy_LS                    => busy_LS,
+    busy_FPU                   => busy_FPU,
     busy_DSP                   => busy_DSP,
     busy_ID                    => busy_ID,
     ls_parallel_exec           => ls_parallel_exec,
+    fpu_parallel_exec          => fpu_parallel_exec,
     dsp_parallel_exec          => dsp_parallel_exec,
     dsp_to_jump_wire           => dsp_to_jump_wire,
     dsp_to_jump                => dsp_to_jump,
@@ -1028,6 +1115,8 @@ begin
     PC_offset_ID               => PC_offset_ID,
     set_branch_condition_ID    => set_branch_condition_ID,
     zero_rd                    => zero_rd,
+    float_instr_req            => float_instr_req,
+    decoded_instruction_FLOAT  => decoded_instruction_FLOAT,
     clk_i                      => clk_i,
     rst_ni                     => rst_ni                
   );
@@ -1035,7 +1124,9 @@ begin
   LSU : Load_Store_Unit
   generic map(
     THREAD_POOL_SIZE           => THREAD_POOL_SIZE,
+    RV32F                      => RV32F,
     fetch_stage_en             => fetch_stage_en,
+    fp_size                    => fp_size,
     accl_en                    => accl_en,
     replicate_accl_en          => replicate_accl_en,
     SIMD                       => SIMD,
@@ -1048,14 +1139,21 @@ begin
     )
   port map(
     clk_i                      => clk_i,
-    rst_ni                     => rst_ni,    
+    rst_ni                     => rst_ni,
     irq_pending                => irq_pending,
-    instr_word_IE              => instr_word_IE,                  
-    pc_IE                      => pc_IE,   
-    RS1_Data_IE                => RS1_Data_IE,           
-    RS2_Data_IE                => RS2_Data_IE,           
+    instr_word_IE              => instr_word_IE,
+    pc_IE                      => pc_IE,
+    RS1_Data_IE                => RS1_Data_IE,
+    RS2_Data_IE                => RS2_Data_IE,
     RD_Data_IE                 => RD_Data_IE,
+    RS2_Data_FLOAT             => RS2_Data_FLOAT,
     decoded_instruction_LS     => decoded_instruction_LS,
+    LS_WB_EN                   => LS_WB_EN,
+    LS_WB_EN_wire              => LS_WB_EN_wire,
+    LS_WB                      => LS_WB,
+    FP_LS_WB_EN                => FP_LS_WB_EN,
+    FP_LS_WB_EN_wire           => FP_LS_WB_EN_wire,
+    FP_LS_WB                   => FP_LS_WB,
     data_be_ID                 => data_be_ID,
     data_width_ID              => data_width_ID,
     harc_EXEC                  => harc_EXEC,
@@ -1063,7 +1161,7 @@ begin
     load_op                    => load_op,
     store_op                   => store_op,
     --sw_mip                     => sw_mip,
-    core_busy_LS               => core_busy_LS,               
+    core_busy_LS               => core_busy_LS,
     busy_LS                    => busy_LS,
     rs1_to_sc                  => rs1_to_sc,
     rs2_to_sc                  => rs2_to_sc,
@@ -1093,11 +1191,8 @@ begin
     ls_sc_read_addr            => ls_sc_read_addr,
     ls_sc_write_addr           => ls_sc_write_addr,
     ls_sc_data_write_wire      => ls_sc_data_write_wire,
-    LS_WB_EN                   => LS_WB_EN,
-    LS_WB_EN_wire              => LS_WB_EN_wire,
     harc_LS_WB                 => harc_LS_WB,
     instr_word_LS_WB           => instr_word_LS_WB,
-    LS_WB                      => LS_WB,
     data_req_o                 => data_req_o,   
     data_gnt_i                 => data_gnt_i,            
     data_rvalid_i              => data_rvalid_i,         
@@ -1108,6 +1203,33 @@ begin
     data_rdata_i               => data_rdata_i,          
     data_err_i                 => data_err_i    
   );
+
+  KFPU_INST : fpu_top_wrapper
+  generic map(
+    THREAD_POOL_SIZE => THREAD_POOL_SIZE,
+    fp_size          => fp_size,
+    fp_exp_size      => 8,
+    fp_mnt_size      => 23,
+    fp_bias          => 127
+  )
+  port map(
+    clk_i                     => clk_i, 
+    rst_ni                    => rst_ni, 
+    float_instr_req           => float_instr_req,
+    harc_EXEC                 => harc_EXEC,
+    instr_word_IE             => instr_word_IE,
+    decoded_instruction_FLOAT => decoded_instruction_FLOAT,
+    RS1_DATA_FLOAT            => RS1_Data_FLOAT,
+    RS2_DATA_FLOAT            => RS2_Data_FLOAT,
+    RD_DATA_FLOAT             => RD_DATA_FLOAT,
+    instr_word_FP_RES_WB      => instr_word_FP_RES_WB,
+    harc_FP_RES_WB            => harc_FP_RES_WB, 
+    busy_FPU                  => busy_FPU,
+    FP_RES_WB_EN              => FP_RES_WB_EN,
+    FP_RES_WB                 => FP_RES_WB,
+    float_flag                => float_flag
+  );
+
 
   EXECUTE : IE_STAGE
   generic map(
@@ -1210,16 +1332,19 @@ begin
     IE_flush_hart_ID           => IE_flush_hart_ID,
     halt_update_IE             => halt_update_IE,
     branch_taken               => branch_taken,
+    branch_hit                 => branch_hit,
     branch_predict_taken_IE    => branch_predict_taken_IE
   );
 
   RF : REGISTERFILE
   generic map(
     THREAD_POOL_SIZE           => THREAD_POOL_SIZE,
+    RV32F                      => RV32F,
     lutram_rf                  => lutram_rf,
     latch_rf                   => latch_rf,
     morph_en                   => morph_en,
     fetch_stage_en             => fetch_stage_en,
+    fp_size                    => fp_size,
     accl_en                    => accl_en,
     SPM_NUM                    => SPM_NUM,
     Addr_Width                 => Addr_Width,
@@ -1237,13 +1362,17 @@ begin
     pc_ID                      => pc_ID,
     data_dependency            => data_dependency,
     bypass_rs1                 => bypass_rs1,
-    bypass_rs2                 => bypass_rs2,        
-    bypass_rd_read             => bypass_rd_read,        
+    bypass_rs2                 => bypass_rs2,
+    bypass_rd_read             => bypass_rd_read,
+    bypass_fp_rs1              => bypass_fp_rs1,
+    bypass_fp_rs2              => bypass_fp_rs2,
+    bypass_fp_rd_read          => bypass_fp_rd_read,
     jalr_stall                 => jalr_stall,
-    branch_stall               => branch_stall, 
+    branch_stall               => branch_stall,
     core_busy_IE               => core_busy_IE,
     core_busy_LS               => core_busy_LS,
     ls_parallel_exec           => ls_parallel_exec,
+    fpu_parallel_exec          => fpu_parallel_exec,
     dsp_parallel_exec          => dsp_parallel_exec,
     dsp_to_jump_wire           => dsp_to_jump_wire,
     instr_rvalid_ID            => instr_rvalid_ID,
@@ -1252,13 +1381,19 @@ begin
     LS_WB_EN                   => LS_WB_EN,
     IE_WB_EN                   => IE_WB_EN,
     MUL_WB_EN                  => MUL_WB_EN,
+    FP_RES_WB_EN               => FP_RES_WB_EN,
+    FP_LS_WB_EN                => FP_LS_WB_EN,
     IE_WB                      => IE_WB,
     MUL_WB                     => MUL_WB,
     LS_WB                      => LS_WB,
+    FP_RES_WB                  => FP_RES_WB,
+    FP_LS_WB                   => FP_LS_WB,
     instr_word_LS_WB           => instr_word_LS_WB,
     instr_word_IE_WB           => instr_word_IE_WB,
+    instr_word_FP_RES_WB       => instr_word_FP_RES_WB,
     harc_LS_WB                 => harc_LS_WB,
     harc_IE_WB                 => harc_IE_WB,
+    harc_FP_RES_WB             => harc_FP_RES_WB,
     zero_rs1                   => zero_rs1,
     zero_rs2                   => zero_rs2,
     pass_BEQ                   => pass_BEQ,
@@ -1270,12 +1405,16 @@ begin
     RS1_Data_IE                => RS1_Data_IE,
     RS2_Data_IE                => RS2_Data_IE,
     RD_Data_IE                 => RD_Data_IE,
+    RS1_Data_FLOAT             => RS1_Data_FLOAT,
+    RS2_Data_FLOAT             => RS2_Data_FLOAT,
+    RD_Data_FLOAT              => RD_Data_FLOAT,
     return_address             => return_address,
     rs1_to_sc                  => rs1_to_sc,
     rs2_to_sc                  => rs2_to_sc,
     rd_to_sc                   => rd_to_sc,
     data_addr_internal_IE      => data_addr_internal_IE,
-    regfile                    => regfile
+    regfile                    => regfile,
+    fp_regfile                 => fp_regfile
   );
   
   ---------------------------------------------------------
@@ -1299,6 +1438,8 @@ begin
     variable row0       : line;
   begin
     if rst_ni = '0' then
+      file_open(trace_o, filenames(harc_EXEC), write_mode);
+      file_close (trace_o);
     elsif rising_edge(clk_i) then
 
       ----------------------------------------------------------------

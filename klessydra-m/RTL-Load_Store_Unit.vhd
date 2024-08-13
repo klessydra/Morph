@@ -24,7 +24,9 @@ use work.riscv_klessydra.all;
 entity Load_Store_Unit is
   generic(
     THREAD_POOL_SIZE           : natural;
+    RV32F                      : natural;
     fetch_stage_en             : natural;
+    fp_size                    : natural;
     accl_en                    : natural;
     replicate_accl_en          : natural;
     SIMD                       : natural;
@@ -44,6 +46,7 @@ entity Load_Store_Unit is
     RS1_Data_IE                : in  std_logic_vector(31 downto 0);
     RS2_Data_IE                : in  std_logic_vector(31 downto 0);
     RD_Data_IE                 : in  std_logic_vector(31 downto 0);
+    RS2_Data_FLOAT             : in  std_logic_vector(fp_size-1 downto 0);
     instr_word_IE              : in  std_logic_vector(31 downto 0);
     pc_IE                      : in  std_logic_vector(31 downto 0);
     decoded_instruction_LS     : in  std_logic_vector(LS_UNIT_INSTR_SET_SIZE-1 downto 0);
@@ -88,11 +91,14 @@ entity Load_Store_Unit is
     ls_sc_write_addr           : out std_logic_vector(Addr_Width-(SIMD_BITS+3)downto 0);
     ls_sc_data_write_wire      : out std_logic_vector(Data_Width-1 downto 0);
     -- WB_Stage Signals
+    instr_word_LS_WB           : out std_logic_vector(31 downto 0);
+    harc_LS_WB                 : out natural range THREAD_POOL_SIZE-1 downto 0;
     LS_WB_EN                   : out std_logic;
     LS_WB_EN_wire              : out std_logic;
-    harc_LS_WB                 : out natural range THREAD_POOL_SIZE-1 downto 0;
-    instr_word_LS_WB           : out std_logic_vector(31 downto 0);
     LS_WB                      : out std_logic_vector(31 downto 0);
+    FP_LS_WB_EN                : out std_logic;
+    FP_LS_WB_EN_wire           : out std_logic;
+    FP_LS_WB                   : out std_logic_vector(fp_size-1 downto 0);
     -- Data memory interface
     data_req_o                 : out std_logic;
     data_gnt_i                 : in  std_logic;
@@ -169,7 +175,7 @@ begin
 	    amo_store_lat  <= '0';
 	    LS_WB_EN <= '0';
 	    busy_LS_lat <= '0';
-	    LS_WB <= (others => '0');
+	    LS_WB <= (others => '0'); -- AAA maybe remove this reset state, and see what happens
       harc_LS_WB <= THREAD_POOL_SIZE-1;
       misaligned_err <= '0';
       instr_word_LS_WB <= (others => '0');
@@ -183,6 +189,7 @@ begin
       LS_WB       <= (others => '0');
       busy_LS_lat <= busy_LS or core_busy_LS;
       LS_WB_EN    <= LS_WB_EN_wire;
+      FP_LS_WB_EN <= FP_LS_WB_EN_wire;
       if accl_en = 1 then
         RS1_Data_IE_lat <= RS1_Data_IE_wire_lat;
         RS2_Data_IE_lat <= RS2_Data_IE_wire_lat;
@@ -236,7 +243,7 @@ begin
               if ((data_addr_internal(1 downto 0) = "00" and data_width_ID = "10") or 
                   (data_addr_internal(0)          = '0'  and data_width_ID = "01") or
                                                              data_width_ID = "00") then
-                RS2_Data_IE_lat <= RS2_Data_IE;	
+                RS2_Data_IE_lat <= RS2_Data_IE;
                 if (store_err = '1') then
                   ls_except_data <= STORE_ERROR_EXCEPT_CODE;
                 end if;
@@ -266,7 +273,7 @@ begin
                  decoded_instruction_LS(KBCASTLD_bit_position) = '1' then
                 overflow_rd_sc <= add_out(Addr_Width downto 0); -- If storing data to SC overflows it's address space
                 -- Illegal byte transfer handler, and illegal writeback address handler
-                if rd_to_sc = "100" then --  AAA change "100" to make it parametrizable -- Not a scratchpad destination address
+                if unsigned(rd_to_sc) = SPM_NUM then  -- Not a scratchpad destination address
                   ls_except_data              <= ILLEGAL_ADDRESS_EXCEPT_CODE;
                 elsif RS1_Data_IE(1 downto 0) /= "00" then
                   ls_except_data              <= LOAD_MISALIGNED_EXCEPT_CODE;
@@ -284,7 +291,7 @@ begin
               if decoded_instruction_LS(KMEMSTR_bit_position) = '1' then
                 overflow_rs1_sc <= add_out(Addr_Width downto 0); -- If loading data from SC overflows it's address space
                 -- Illegal byte transfer handler, and illegal writeback address handler
-                if rs1_to_sc = "100" then                              --  Not a scratchpad source address
+                if unsigned(rs1_to_sc) = SPM_NUM then --  Not a scratchpad source address
                   ls_except_data              <= ILLEGAL_ADDRESS_EXCEPT_CODE;
                 elsif RD_Data_IE(1 downto 0) /= "00" then
                   ls_except_data              <= STORE_MISALIGNED_EXCEPT_CODE;
@@ -329,7 +336,7 @@ begin
                   ls_except_data              <= SCRATCHPAD_OVERFLOW_EXCEPT_CODE;     
                 end if;
               end if;
-            end if;
+            end if; -- accl_en
 
             if decoded_instruction_LS(LW_bit_position) = '1'  or (decoded_instruction_LS(AMOSWAP_bit_position) = '1' and amo_store_lat = '0' and amo_load_skip = '0') then
               if data_rvalid_i = '1' then
@@ -398,6 +405,14 @@ begin
               end if;
             end if;
 
+            if RV32F = 1 then
+              if decoded_instruction_LS(FLW_bit_position) = '1' then
+                if data_rvalid_i = '1' then   
+                  FP_LS_WB <= data_rdata_i;
+                end if;
+              end if;
+            end if;
+
         end case;
       end if;
     end if;
@@ -430,7 +445,8 @@ begin
   begin
     data_addr_internal_wires         := std_logic_vector(signed(RS1_Data_IE));  -- The reset value was non-zero in order to keep the switching activity minimal
     nextstate_LS                     <= normal;
-    LS_WB_EN_wire                    <= LS_WB_EN;
+    LS_WB_EN_wire                    <= LS_WB_EN;    -- AAA this signal is superceded by the successive assignments that default the signal value back to zero
+    FP_LS_WB_EN_wire                 <= FP_LS_WB_EN; -- AAA this signal is superceded by the successive assignments that default the signal value back to zero
     data_be_internal_wires           := (others => '0');
     data_wdata_o_wires               := (others => '0');
     data_we_o_wires                  := '0';
@@ -457,9 +473,11 @@ begin
     end if;
 
     if ls_instr_req = '0' and busy_LS_lat = '0' then
-      LS_WB_EN_wire <= '0';
+      LS_WB_EN_wire     <= '0';
+      FP_LS_WB_EN_wire  <= '0';
     elsif LS_instr_req = '1' or busy_LS_lat = '1' then
-      LS_WB_EN_wire <= '0';
+      LS_WB_EN_wire     <= '0';
+      FP_LS_WB_EN_wire  <= '0';
       case state_LS is
         when normal =>
 
@@ -519,6 +537,11 @@ begin
                 data_req_o_wires       := '1';
                 data_be_internal_wires := data_be_ID;
                 data_wdata_o_wires := RS2_Data_IE;
+                if RV32F = 1 then
+                  if decoded_instruction_LS(FSW_bit_position) = '1' then
+                    data_wdata_o_wires := RS2_Data_FLOAT;
+                  end if;
+                end if;
                 if store_err = '1' then
                   ls_except_condition_wires  := '1';
                   ls_taken_branch_wires      := '1';
@@ -536,6 +559,7 @@ begin
             end if;
             if data_width_ID = "01" then  -- store half word
               case data_addr_internal_wires(1) is
+                -- AAA maybe just assign 16 bits and the rest will default to 0 
                 when '0' =>
                   data_wdata_o_wires := RS2_Data_IE(31 downto 0);
                   data_we_o_wires        := '1';  -- is a writing
@@ -550,7 +574,8 @@ begin
             end if;
             if data_width_ID = "00" then  -- store byte
               case data_addr_internal_wires(1 downto 0) is
-                when "00" =>
+                -- AAA maybe just assign 8 bits and the rest will default to 0 
+                when "00" => 
                   data_wdata_o_wires := RS2_Data_IE(31 downto 0);
                   data_we_o_wires        := '1';  -- is a writing
                   data_be_internal_wires := data_be_ID;
@@ -585,9 +610,10 @@ begin
               if decoded_instruction_LS(KMEMLD_bit_position)   = '1' or
                  decoded_instruction_LS(KBCASTLD_bit_position) = '1' then
                 -- RS2_Data_IE(Addr_Width downto 0) instead of RS2_Data_IE(Addr_Width -1 downto 0) in order to allow reading sizes = MAX_SC_SIZE and not MAX_SC_SIZE - 1 
-                if rd_to_sc = "100" then -- AAA change this to support more than 4 spms
+                if unsigned(rd_to_sc) = SPM_NUM then -- AAA change this to support more than 4 spms
                   ls_except_condition_wires  := '1';
                   ls_taken_branch_wires      := '1';
+                -- AAA loading scalar values of type 8-bit and 16-bit might raise this exception as they are not always aligned 
                 elsif(RS1_Data_IE(1 downto 0) /= "00") then
                   ls_except_condition_wires  := '1';
                   ls_taken_branch_wires      := '1';
@@ -610,7 +636,7 @@ begin
 
             if decoded_instruction_LS(KMEMSTR_bit_position) = '1' then
               -- RS2_Data_IE(Addr_Width downto 0) instead of RS2_Data_IE(Addr_Width -1 downto 0) in order to allow reading sizes = MAX_SC_SIZE and not MAX_SC_SIZE - 1 
-              if rs1_to_sc = "100" then
+              if unsigned(rs1_to_sc) = SPM_NUM then
                 ls_except_condition_wires  := '1';
                 ls_taken_branch_wires      := '1';
               elsif(RD_Data_IE(1 downto 0) /= "00") then
@@ -660,6 +686,14 @@ begin
           if decoded_instruction_LS(LB_bit_position) = '1' or decoded_instruction_LS(LBU_bit_position) = '1' then 
             if data_rvalid_i = '1' then   
               LS_WB_EN_wire <= '1';
+            end if;
+          end if;
+
+          if RV32F = 1 then
+            if decoded_instruction_LS(FLW_bit_position) = '1' then
+              if data_rvalid_i = '1' then   
+                FP_LS_WB_EN_wire <= '1';
+              end if;
             end if;
           end if;
 
@@ -757,7 +791,7 @@ begin
                 end if;
               end if;
             end if;
-	  
+
           elsif data_rvalid_i = '1' then
             if store_op = '1' or amo_store_lat = '1' or amo_load_skip = '1' then -- SW or AMOSWAP data writing
               if decoded_instruction_LS(SW_bit_position) = '1' then  -- SW data writing
@@ -813,15 +847,16 @@ begin
             nextstate_LS <= data_valid_waiting;
             busy_LS_wires := '1';
             -- do not change to "if store_op = '0'" since that will disable store superscalar execution, because store_op resets to 0 on the next cycle
-            if decoded_instruction_LS(SW_bit_position) = '0' and  decoded_instruction_LS(SH_bit_position) = '0' and decoded_instruction_LS(SB_bit_position)  = '0' then
+            if decoded_instruction_LS(FSW_bit_position) = '0' and decoded_instruction_LS(SW_bit_position) = '0' and  decoded_instruction_LS(SH_bit_position) = '0' and decoded_instruction_LS(SB_bit_position)  = '0' then
               core_busy_LS_wires := '1';
             end if;
-		  end if;
+		      end if;
 
       end case;
     end if;
 	
     if fetch_stage_en = 0 then
+      flush_hart_int_wire            <= (others => '0');
       flush_hart_int_wire(harc_EXEC) <= ls_except_condition_wires;
       for h in harc_range loop
         LSU_flush_hart_ID(h) <= flush_hart_int_wire(h);

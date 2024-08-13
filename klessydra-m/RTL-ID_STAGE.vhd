@@ -28,6 +28,7 @@ entity ID_STAGE is
   generic(
     THREAD_POOL_SIZE           : natural;
     RV32M                      : natural;
+    RV32F                      : natural;
     morph_en                   : natural;
     fetch_stage_en             : natural;
     branch_predict_en          : natural;
@@ -74,14 +75,19 @@ entity ID_STAGE is
     bypass_rs1                 : out std_logic;
     bypass_rs2                 : out std_logic;
     bypass_rd_read             : out std_logic;
+    bypass_fp_rs1              : out std_logic;
+    bypass_fp_rs2              : out std_logic;
+    bypass_fp_rd_read          : out std_logic;
     jalr_stall                 : out std_logic;
     branch_stall               : out std_logic;
     core_busy_IE               : in  std_logic;
     core_busy_LS               : in  std_logic;
     busy_LS                    : in  std_logic;
+    busy_FPU                   : in  std_logic;
     busy_DSP                   : in  std_logic_vector(ACCL_NUM-1 downto 0);
     busy_ID                    : out std_logic;
     ls_parallel_exec           : out std_logic;
+    fpu_parallel_exec          : out std_logic;
     dsp_parallel_exec          : out std_logic;
     dsp_to_jump_wire           : out std_logic;
     dsp_to_jump                : out std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
@@ -126,7 +132,8 @@ entity ID_STAGE is
     PC_offset_ID               : out std_logic_vector(31 downto 0);
     set_branch_condition_ID    : out std_logic;
     zero_rd                    : out std_logic;
-
+    float_instr_req            : out std_logic; 
+    decoded_instruction_FLOAT  : out std_logic_vector(FP_UNIT_INSTR_SET_SIZE-1 downto 0); 
     -- branch predictin
     flush_hart_ID              : in  std_logic_vector(THREAD_POOL_SIZE-1 downto 0);
     branch_predict_taken_ID    : in  std_logic;
@@ -251,6 +258,7 @@ begin
       instr_rvalid_IE     <= '0';
       ie_instr_req        <= '0';
       ls_instr_req        <= '0';
+      float_instr_req     <= '0';
       comparator_en       <= '0';
       WB_EN_next_ID       <= '0';
     elsif rising_edge(clk_i) then
@@ -258,6 +266,7 @@ begin
       jalr_flush       <= (others => '0');
       ls_instr_req     <= '0';
       ie_instr_req     <= '0';
+      float_instr_req  <= '0';
       WB_EN_next_ID    <= '0'; 
       instr_rvalid_IE  <= '0';
 
@@ -267,6 +276,7 @@ begin
          core_busy_IE                    = '1'  or 
          core_busy_LS                    = '1'  or 
          ls_parallel_exec                = '0'  or 
+         fpu_parallel_exec               = '0'  or 
          dsp_parallel_exec               = '0'  or 
          (data_dependency                = '1'  and flush_hart_ID(harc_ID) = '0') or 
          flush_hart_ID(harc_ID)          = '1'  then -- the instruction pipeline is halted
@@ -646,6 +656,45 @@ begin
                 decoded_instruction_IE <= ILL_pattern;
             end case;
 
+          when LOAD_F =>
+            if RV32F = 1 then
+              load_op <= '1';
+              data_width_ID <= "10";
+              data_be_ID   <= "1111";
+              ls_instr_req <= '1';
+              decoded_instruction_LS <= FLW_pattern;
+            end if;
+
+          when STORE_F =>
+            if RV32F = 1 then
+              store_op <= '1';
+              data_width_ID <= "10";
+              data_be_ID <= "1111";
+              ls_instr_req <= '1';
+              decoded_instruction_LS <= FSW_pattern;
+            end if;
+
+          when FLOAT =>
+            if RV32F = 1 then
+              case FUNCT7_wires is
+                when FADD =>  -- FADD INSTRUCTION
+                  float_instr_req <= '1';
+                  decoded_instruction_FLOAT <= FADD_pattern;
+                when FSUB =>  -- FSUB INSTRUCTION
+                  float_instr_req <= '1';
+                  decoded_instruction_FLOAT <= FSUB_pattern;
+                when FMUL =>  -- FMUL INSTRUCTION
+                  float_instr_req <= '1';
+                  decoded_instruction_FLOAT <= FMUL_pattern;
+                when FDIV =>  -- FDIV INSTRUCTION
+                  float_instr_req <= '1';
+                  decoded_instruction_FLOAT <= FDIV_pattern;
+                when others =>            -- ILLEGAL_INSTRUCTION
+                  ie_instr_req <= '1';
+                  decoded_instruction_IE <= ILL_pattern;
+              end case;
+            end if;
+
           when KMEM =>
             if accl_en = 1 then
               case FUNCT7_wires is
@@ -771,7 +820,7 @@ begin
                 decoded_instruction_IE <= JAL_pattern;
               end if;
             end if;
- 
+
           when others =>                -- ILLEGAL_INSTRUCTION
             ie_instr_req <= '1';
             decoded_instruction_IE <= ILL_pattern;
@@ -1020,6 +1069,12 @@ begin
     bypass_rs1        <= '0';
     bypass_rs2        <= '0';
     bypass_rd_read    <= '0';
+    if RV32F = 1 then
+      bypass_fp_rs1     <= '0';
+      bypass_fp_rs2     <= '0';
+      bypass_fp_rd_read <= '0';
+    end if;
+    -- AAA add the floating point data_dependency register
     if instr_rvalid_ID_int = '1' and flush_decode(harc_ID) = '0' then
       if valid_buf(harc_ID)(rs1(instr_word_ID)) = '0' and rs1_valid = '1' then
         data_dependency <= '1';
@@ -1141,6 +1196,7 @@ begin
       if core_busy_LS      = '0' and 
          core_busy_IE      = '0' and 
          ls_parallel_exec  = '1' and 
+         fpu_parallel_exec = '1' and 
          dsp_parallel_exec = '1' and 
          (data_dependency = '0' or (data_dependency = '1' and flush_hart_ID(harc_ID) = '1')) then
         instr_rvalid_ID_int_lat <= '0';
@@ -1168,12 +1224,13 @@ begin
   begin
     OPCODE_wires  := OPCODE(instr_word_ID); 
     -- parallelism enablers, halts the pipeline when it is zero. -------------------
-    ls_parallel_exec  <= '0' when (OPCODE_wires = LOAD or OPCODE_wires = STORE or OPCODE_wires = AMO or OPCODE_wires = KMEM) and busy_LS = '1' and instr_rvalid_ID_int = '1' else '1';
+    ls_parallel_exec  <= '0' when (OPCODE_wires = LOAD or OPCODE_wires = STORE or OPCODE_wires = AMO or ((OPCODE_wires = LOAD_F or OPCODE_wires = STORE_F) and RV32F = 1) or OPCODE_wires = KMEM) and busy_LS = '1' and instr_rvalid_ID_int = '1' else '1';
+    fpu_parallel_exec <= '0' when RV32F = 1 and (OPCODE_wires = FLOAT and busy_FPU = '1') else '1';
     dsp_parallel_exec <= '0' when (OPCODE_wires = KMEM or OPCODE_wires = AMO) and busy_DSP(harc_ID_to_DSP) = '1' and instr_rvalid_ID_int = '1' else '1';
     dsp_to_jump_wire  <= '1' when OPCODE_wires = KDSP and busy_DSP(harc_ID_to_DSP) = '1' else '0';
     busy_ID <= '0';  -- wait for a valid instruction or process the instruction 
     -- A data deoendency is only valid to make a stall when the current dependent instruction is not flushed 
-    if core_busy_IE = '1' or core_busy_LS = '1' or ls_parallel_exec = '0'  or dsp_parallel_exec = '0'  or (data_dependency = '1' and flush_hart_ID(harc_ID) = '0') or branch_stall = '1' or jalr_stall = '1' then
+    if core_busy_IE = '1' or core_busy_LS = '1' or ls_parallel_exec = '0'  or fpu_parallel_exec = '0' or dsp_parallel_exec = '0'  or (data_dependency = '1' and flush_hart_ID(harc_ID) = '0') or branch_stall = '1' or jalr_stall = '1' then
       busy_ID <= '1';  -- wait for the stall to finish, block new instructions
     end if; 
   end process;
@@ -1186,28 +1243,36 @@ begin
     OPCODE_wires      := OPCODE(instr_word_ID); 
     busy_ID           <= '0';
     ls_parallel_exec  <= '0' when busy_LS = '1' and instr_rvalid_ID_int = '1' else '1';
+    fpu_parallel_exec <= '0' when RV32F = 1 and busy_FPU = '1' else '1';
     dsp_parallel_exec <= '0' when or_vect_bits(busy_DSP) = '1' and instr_rvalid_ID_int = '1' else '1';
     dsp_to_jump_wire  <= '1' when OPCODE_wires = KDSP and busy_DSP(harc_ID_to_DSP) = '1' else '0';
     -- A data deoendency is only valid to make a stall when the current dependent instruction is not flushed
-    if core_busy_IE = '1' or core_busy_LS = '1' or ls_parallel_exec = '0'  or dsp_parallel_exec = '0' or (data_dependency = '1' and flush_hart_ID(harc_ID) = '0') or branch_stall = '1' or jalr_stall = '1' then
+    if core_busy_IE = '1' or core_busy_LS = '1' or ls_parallel_exec = '0'  or fpu_parallel_exec = '0' or dsp_parallel_exec = '0' or (data_dependency = '1' and flush_hart_ID(harc_ID) = '0') or branch_stall = '1' or jalr_stall = '1' then
       busy_ID <= '1';  -- wait for the stall to finish, block new instructions 
     end if; 
   end process;
   end generate;
 
-  process(all)
-  begin
-    dsp_instr_req_wire <= (others => '0');
-    if instr_rvalid_ID_int = '1' and busy_ID = '0' then
-      if OPCODE(instr_word_ID) = KDSP then
-        if dsp_to_jump_wire = '0' then
-          if flush_hart_ID(harc_ID) = '0' then
-            dsp_instr_req_wire(harc_ID_to_DSP) <=  '1';
-          end if;
-        end if;
-      end if;
-    end if;
-  end process; --------------------------------------------------------------------------------
+
+  dsp_instr_req_wire <= (others => '0') when not (instr_rvalid_ID_int = '1'     and 
+                                                  busy_ID = '0'                 and 
+                                                  OPCODE(instr_word_ID) = KDSP  and 
+                                                  dsp_to_jump_wire = '0'        and 
+                                                  flush_hart_ID(harc_ID) = '0') else (harc_ID_to_DSP => '1', others => '0');
+
+  --process(all)
+  --begin
+  --  dsp_instr_req_wire <= (others => '0');
+  --  if instr_rvalid_ID_int = '1' and busy_ID = '0' then
+  --    if OPCODE(instr_word_ID) = KDSP then
+  --      if dsp_to_jump_wire = '0' then
+  --        if flush_hart_ID(harc_ID) = '0' then
+  --          dsp_instr_req_wire(harc_ID_to_DSP) <=  '1';
+  --        end if;
+  --      end if;
+  --    end if;
+  --  end if;
+  --end process; --------------------------------------------------------------------------------
 
   process(clk_i, rst_ni)
   begin

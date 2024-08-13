@@ -50,6 +50,7 @@ entity klessydra_m_core is
     latch_rf                : natural := 0;   -- Changes the regfile from flip-flop type into Latch type (only works if lutram_rf is set to 0)
     RV32E                   : natural := 0;   -- Regfile size, Can be set to 32 for RV32E being 0 else 16 for RV32E being set to 1
     RV32M                   : natural := 1;   -- Enables the M-extension of the risc-v instruction set
+    RV32F                   : natural := 1;   -- Enables the F-extension of the risc-v instruction set
     context_switch          : natural := 0;   -- Enables the context switching between cores
     morph_en                : natural := 1;   -- Enables the generation of the logic that allows processor to morph from an IMT to a single core processor
     fetch_stage_en          : natural := 0;   -- Enables the generation of a fetch stage buffer, else the incoming instrution will go directly to the decode stage.
@@ -186,6 +187,8 @@ architecture Klessydra_M of klessydra_m_core is
   constant TPS_GLBL_CEIL       : natural := integer(ceil(log2(real(THREAD_POOL_SIZE_GLOBAL))));
   constant SIMD_Width          : natural := SIMD*Data_Width;
 
+  constant fp_size             : natural := 32;
+
   subtype harc_range is natural range THREAD_POOL_SIZE-1 downto 0;  -- will be used replicated units in the core
 
   constant FU_NUM   : natural := (ACCL_NUM-(ACCL_NUM-1)*(multithreaded_accl_en));
@@ -291,6 +294,7 @@ architecture Klessydra_M of klessydra_m_core is
   signal jump_instr_lat             : std_logic;
   signal branch_instr               : std_logic;
   signal branch_instr_lat           : std_logic;
+  signal branch_hit                 : std_logic;
 
   -- auxiliary data memory interface signals
   signal data_addr_internal     : std_logic_vector(31 downto 0);
@@ -453,6 +457,7 @@ architecture Klessydra_M of klessydra_m_core is
     data_addr_internal          : in  std_logic_vector(31 downto 0);
     jump_instr                  : in  std_logic;
     branch_instr                : in  std_logic;
+    branch_hit                  : in  std_logic;
     set_branch_condition        : in  std_logic;
     csr_instr_req               : in  std_logic;
     misaligned_err              : in  std_logic;
@@ -505,6 +510,7 @@ architecture Klessydra_M of klessydra_m_core is
     latch_rf                   : natural;
     RV32E                      : natural;
     RV32M                      : natural;
+    RV32F                      : natural;
     context_switch             : natural;
     morph_en                   : natural;
     fetch_stage_en             : natural;
@@ -525,6 +531,7 @@ architecture Klessydra_M of klessydra_m_core is
     count_all                  : natural;
     debug_en                   : natural;
     tracer_en                  : natural;
+    fp_size                    : natural;
     -------------------------------------
     ACCL_NUM                   : natural;
     FU_NUM                     : natural;
@@ -582,6 +589,7 @@ architecture Klessydra_M of klessydra_m_core is
     jump_instr_lat             : out std_logic;
     branch_instr               : out std_logic;
     branch_instr_lat           : out std_logic;
+    branch_hit                 : out std_logic;
     harc_FETCH                 : out harc_range;
     harc_ID                    : out harc_range;
     harc_EXEC                  : out natural range THREAD_POOL_SIZE-1 downto 0;
@@ -892,6 +900,7 @@ begin
       data_addr_internal          => data_addr_internal,
       jump_instr                  => jump_instr,
       branch_instr                => branch_instr,
+      branch_hit                  => branch_hit,
       set_branch_condition        => set_branch_condition,
       csr_instr_req               => csr_instr_req,
       misaligned_err              => misaligned_err,
@@ -943,6 +952,7 @@ begin
       latch_rf                => latch_rf,
       RV32E                   => RV32E,
       RV32M                   => RV32M,
+      RV32F                   => RV32F,
       context_switch          => context_switch,
       morph_en                => morph_en,
       fetch_stage_en          => fetch_stage_en,
@@ -963,6 +973,7 @@ begin
       count_all               => count_all,
       debug_en                => debug_en,
       tracer_en               => tracer_en,
+      fp_size                 => fp_size,
       -----------------------------------
       ACCL_NUM                => ACCL_NUM,
       FU_NUM                  => FU_NUM,
@@ -1020,6 +1031,7 @@ begin
       jump_instr_lat             => jump_instr_lat,
       branch_instr               => branch_instr,
       branch_instr_lat           => branch_instr_lat,
+      branch_hit                 => branch_hit,
       harc_FETCH                 => harc_FETCH,
       harc_ID                    => harc_ID,
       harc_EXEC                  => harc_EXEC,
