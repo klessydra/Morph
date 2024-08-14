@@ -8,7 +8,7 @@ Klessydra-Morph:
     klessydra-m/RTL-CSR_Unit.vhd,
     klessydra-m/RTL-Debug_Unit.vhd,
     klessydra-m/RTL-DSP_Unit.vhd,
-    klessydra-m/RTL-FPU_Top_Wrapper.vhd
+    klessydra-m/RTL-FPU_Top_Wrapper.vhd,
     klessydra-m/RTL-ID_STAGE.vhd,
     klessydra-m/RTL-IE_STAGE.vhd,
     klessydra-m/RTL-IF_STAGE.vhd,
