@@ -24,11 +24,11 @@ package riscv_klessydra is
   -- instruction trace file
   file file_handler : text open write_mode is "execution_trace.txt";
 
-  file file_handler0 : text open write_mode is "execution_0.txt";
+  --file file_handler0 : text open write_mode is "execution_0.txt";
 
-  file file_handler1 : text open write_mode is "execution_1.txt";
+  --file file_handler1 : text open write_mode is "execution_1.txt";
 
-  file file_handler2 : text open write_mode is "execution_2.txt";
+  --file file_handler2 : text open write_mode is "execution_2.txt";
 
 
 ------------------------------------------------------------------------------------------------------------
@@ -56,7 +56,7 @@ package riscv_klessydra is
   type array_3d_int_div_16 is array (integer range<>) of array_2d_int_div_16;
   type array_3d_int_div_8  is array (integer range<>) of array_2d_int_div_8;
 
-  type fsm_IE_states is (sleep, reset, normal, csr_instr_wait_state, debug);
+  type fsm_IE_states is (sleep, normal, csr_instr_wait_state);
   type mulh_states   is (init, mult, accum);
   type mul_states    is (mult, accum);
   type div_states    is (init, divide);
@@ -67,11 +67,25 @@ package riscv_klessydra is
   constant dsp_halt_hart           : std_logic_vector(1 downto 0) := "01";
   constant dsp_exec                : std_logic_vector(1 downto 0) := "10";
 
+  constant THREAD_POOL_BASELINE    : integer := 3;
   constant THREAD_ID_SIZE          : integer := 4;
   constant NOP_POOL_SIZE           : integer := 2;
   constant BRANCHING_DELAY_SLOT    : integer := 3;
   --constant HARC_SIZE               : integer := THREAD_POOL_SIZE;
 
+  constant SLEEP_MODE              : natural := 0;
+  constant SINGLE_HART_MODE        : natural := 1;
+  constant DUAL_HART_MODE          : natural := 2;
+  constant IMT_MODE                : natural := THREAD_POOL_BASELINE;
+
+-------------------------------------------------------------------------------------------------
+--  ███████╗██╗  ██╗███████╗ ██████╗    ██████╗ ███████╗███████╗██╗███╗   ██╗███████╗███████╗  --
+--  ██╔════╝╚██╗██╔╝██╔════╝██╔════╝    ██╔══██╗██╔════╝██╔════╝██║████╗  ██║██╔════╝██╔════╝  --
+--  █████╗   ╚███╔╝ █████╗  ██║         ██║  ██║█████╗  █████╗  ██║██╔██╗ ██║█████╗  ███████╗  --
+--  ██╔══╝   ██╔██╗ ██╔══╝  ██║         ██║  ██║██╔══╝  ██╔══╝  ██║██║╚██╗██║██╔══╝  ╚════██║  --
+--  ███████╗██╔╝ ██╗███████╗╚██████╗    ██████╔╝███████╗██║     ██║██║ ╚████║███████╗███████║  --
+--  ╚══════╝╚═╝  ╚═╝╚══════╝ ╚═════╝    ╚═════╝ ╚══════╝╚═╝     ╚═╝╚═╝  ╚═══╝╚══════╝╚══════╝  --
+-------------------------------------------------------------------------------------------------
 
   constant EXEC_UNIT_INSTR_SET_SIZE   : natural := 52;  -- total number of instructions in the exec unit
   constant LS_UNIT_INSTR_SET_SIZE     : natural := 14;  -- total number of instructions in the ld_str unit
@@ -135,6 +149,12 @@ package riscv_klessydra is
   constant REM_pattern     : std_logic_vector(EXEC_UNIT_INSTR_SET_SIZE-1 downto 0) := "0100000000000000000000000000000000000000000000000000";
   constant REMU_pattern    : std_logic_vector(EXEC_UNIT_INSTR_SET_SIZE-1 downto 0) := "1000000000000000000000000000000000000000000000000000";
   -------------------------------------------------------------------------------------------------------------------------------------------
+
+  -- BRANCHING INSTRUCTIONS in FETCH unit -------------------------------------------------------
+  constant JAL_FETCH_pattern    : std_logic_vector(BRANCHING_INSTR_SET_SIZE-1 downto 0) := "001";
+  constant JALR_FETCH_pattern   : std_logic_vector(BRANCHING_INSTR_SET_SIZE-1 downto 0) := "010";
+  constant BRANCH_FETCH_pattern : std_logic_vector(BRANCHING_INSTR_SET_SIZE-1 downto 0) := "100";
+  -----------------------------------------------------------------------------------------------
 
   -- LOAD STORE UNIT INSTR SET ---------------------------------------------------------------------
   constant LW_pattern       : std_logic_vector(LS_UNIT_INSTR_SET_SIZE-1 downto 0) := "00000000000001";
@@ -246,50 +266,52 @@ package riscv_klessydra is
   constant REM_bit_position     : natural := 50;
   constant REMU_bit_position    : natural := 51;
 
-  constant LW_bit_position       : natural := 0;
-  constant LH_bit_position       : natural := 1;
-  constant LHU_bit_position      : natural := 2;
-  constant LB_bit_position       : natural := 3;
-  constant LBU_bit_position      : natural := 4;
-  constant SW_bit_position       : natural := 5;
-  constant SH_bit_position       : natural := 6;
-  constant SB_bit_position       : natural := 7;
-  constant FLW_bit_position      : natural := 8;
-  constant FSW_bit_position      : natural := 9;
-  constant AMOSWAP_bit_position  : natural := 10;
-  constant KMEMLD_bit_position   : natural := 11;
-  constant KMEMSTR_bit_position  : natural := 12;
-  constant KBCASTLD_bit_position : natural := 13;
+  constant LW_bit_position         : natural := 0;
+  constant LH_bit_position         : natural := 1;
+  constant LHU_bit_position        : natural := 2;
+  constant LB_bit_position         : natural := 3;
+  constant LBU_bit_position        : natural := 4;
+  constant SW_bit_position         : natural := 5;
+  constant SH_bit_position         : natural := 6;
+  constant SB_bit_position         : natural := 7;
+  constant FLW_bit_position        : natural := 8;
+  constant FSW_bit_position        : natural := 9;
+  constant AMOSWAP_bit_position    : natural := 10;
+  constant KMEMLD_bit_position     : natural := 11;
+  constant KMEMSTR_bit_position    : natural := 12;
+  constant KBCASTLD_bit_position   : natural := 13;
+  constant KADDV_bit_position      : natural := 0;
+  constant KSUBV_bit_position      : natural := 1;
+  constant KVMUL_bit_position      : natural := 2;
+  constant KVRED_bit_position      : natural := 3;
+  constant KDOTP_bit_position      : natural := 4;
+  constant KSVADDSC_bit_position   : natural := 5;
+  constant KSVADDRF_bit_position   : natural := 6;
+  constant KSVMULSC_bit_position   : natural := 7;
+  constant KSVMULRF_bit_position   : natural := 8;
+  constant KSRAV_bit_position      : natural := 9;
+  constant KSRLV_bit_position      : natural := 10;
+  constant KBCAST_bit_position     : natural := 11;
+  constant KRELU_bit_position      : natural := 12;
+  constant KDOTPPS_bit_position    : natural := 13;
+  constant KVSLT_bit_position      : natural := 14;
+  constant KSVSLT_bit_position     : natural := 15;
+  constant KVCP_bit_position       : natural := 16;
+  constant KVDIV_bit_position      : natural := 17;
+  constant KSVDIVSC_bit_position   : natural := 18;
+  constant KSVDIVRF_bit_position   : natural := 19;
+  constant KVREM_bit_position      : natural := 20;
+  constant KSVREMSC_bit_position   : natural := 21;
+  constant KSVREMRF_bit_position   : natural := 22;
+  constant KVMULPS_bit_position    : natural := 23;
+  constant KSVMULPSSC_bit_position : natural := 24;
+  constant KSVMULPSRF_bit_position : natural := 25;
+  constant KDOTPS_bit_position     : natural := 26;
+  constant KADDVCLIP_bit_position  : natural := 27;
 
-  constant KADDV_bit_position    : natural := 0;
-  constant KSUBV_bit_position    : natural := 1;
-  constant KVMUL_bit_position    : natural := 2;
-  constant KVRED_bit_position    : natural := 3;
-  constant KDOTP_bit_position    : natural := 4;
-  constant KSVADDSC_bit_position : natural := 5;
-  constant KSVADDRF_bit_position : natural := 6;
-  constant KSVMULSC_bit_position : natural := 7;
-  constant KSVMULRF_bit_position : natural := 8;
-  constant KSRAV_bit_position    : natural := 9;
-  constant KSRLV_bit_position    : natural := 10;
-  constant KBCAST_bit_position   : natural := 11;
-  constant KRELU_bit_position    : natural := 12;
-  constant KDOTPPS_bit_position  : natural := 13;
-  constant KVSLT_bit_position    : natural := 14;
-  constant KSVSLT_bit_position   : natural := 15;
-  constant KVCP_bit_position     : natural := 16;
-    ---NEW---------------------------------------
-  constant KVDIV_bit_position    : natural := 17;
-  constant KSVDIVSC_bit_position : natural := 18;
-  constant KSVDIVRF_bit_position : natural := 19;
-  constant KVREM_bit_position    : natural := 20;
-  constant KSVREMSC_bit_position : natural := 21;
-  constant KSVREMRF_bit_position : natural := 22;
-  constant KVMULPS_bit_position  : natural := 23;
-  constant KSVMULPSSC_bit_position: natural := 24;
-  constant KSVMULPSRF_bit_position: natural := 25;
-  constant KDOTPS_bit_position    : natural := 26;
-  constant KADDVCLIP_bit_position : natural := 27;
+  constant JAL_FETCH_instr       : natural := 0;
+  constant JALR_FETCH_instr      : natural := 1;
+  constant BRANCH_FETCH_instr    : natural := 2;
 
 -----------------------------------------------------------------------------------------
 --   ██████╗███████╗██████╗     ██████╗ ███████╗███████╗██╗███╗   ██╗███████╗███████╗  --
@@ -377,10 +399,11 @@ package riscv_klessydra is
   constant MHPMEVENT30_addr   : std_logic_vector (11 downto 0) := x"33E";
   constant MHPMEVENT31_addr   : std_logic_vector (11 downto 0) := x"33F";
   -- Custom Klessydra CSR addresses
-  constant MPSCLFAC_addr      : std_logic_vector (11 downto 0) := x"BE0";
-  constant MVSIZE_addr        : std_logic_vector (11 downto 0) := x"BF0";
-  constant MVTYPE_addr        : std_logic_vector (11 downto 0) := x"BF8";
-
+  constant MPSCLFAC_addr      : std_logic_vector (11 downto 0) := x"BE0";  -- custom CSR registers
+  constant MVSIZE_addr        : std_logic_vector (11 downto 0) := x"BF0";  -- custom CSR registers
+  constant MVTYPE_addr        : std_logic_vector (11 downto 0) := x"BF8";  -- custom CSR registers
+  constant MBHARTID_addr      : std_logic_vector (11 downto 0) := x"FC4";  -- custom CSR registers
+  constant MPIP_addr          : std_logic_vector (11 downto 0) := x"FC8";  -- custom CSR registers
 
   -- reset values of CSR Registers
   constant MTVEC_RESET_VALUE    : std_logic_vector(31 downto 0)          := x"00000094";
@@ -598,6 +621,7 @@ package riscv_klessydra is
   constant SCRATCHPAD_OVERFLOW_EXCEPT_CODE   : std_logic_vector(31 downto 0) := x"00000102"; -- Custom codes
   constant READ_SAME_SCARTCHPAD_EXCEPT_CODE  : std_logic_vector(31 downto 0) := x"00000103"; -- Custom codes
   constant WRITE_SAME_SCARTCHPAD_EXCEPT_CODE : std_logic_vector(31 downto 0) := x"00000104"; -- Custom codes
+  constant CTX_SWITCH_CODE                   : std_logic_vector(31 downto 0) := x"00000110"; -- Custom codes
 
 
 ----------------------------------------------------------------------------------
