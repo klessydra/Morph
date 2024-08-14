@@ -190,6 +190,8 @@ architecture EXECUTE of IE_STAGE is
   signal sub                        : std_logic_vector(32 downto 0);
   signal res_wire, res              : std_logic_vector(63 downto 0);
   signal div_count_wire, div_count  : unsigned(5 downto 0);
+  signal div_enable                 : std_logic;
+  signal div_finished               : std_logic;
 
   signal Immediate                  : std_logic_vector(31 downto 0);
   signal absolute_address_int       : std_logic_vector(31 downto 0);
@@ -220,7 +222,7 @@ architecture EXECUTE of IE_STAGE is
 
   component divider is
     generic (
-      divider_implementation : natural := 4;
+      divider_implementation : natural := 5;
       size                   : natural := 32
     );
     Port (
@@ -228,8 +230,8 @@ architecture EXECUTE of IE_STAGE is
       clk                   : in  std_logic;
       dividend_i            : in  std_logic_vector(size-1 downto 0);
       divisor_i             : in  std_logic_vector(size-1 downto 0);
-      div_enable_i          : in  std_logic;
-      division_finished_out : out std_logic;
+      div_enable            : in  std_logic;
+      div_finished          : out std_logic;
       result_div            : out std_logic_vector(size-1 downto 0); -- Decomment if you want to see the result
       result_rem            : out std_logic_vector(size-1 downto 0) -- Decomment if you want to see the result
     );
@@ -272,18 +274,15 @@ begin
     )
     port map(
       clk                    => clk_i,
-      reset                  => rst_ni,
-      dividend_i             => RS1_DATA_IE,
-      divisor_i              => RS2_DATA_IE,
-      div_enable_i           => decoded_instruction_IE(DIVU_bit_position) or
-                                decoded_instruction_IE(DIV_bit_position)  or
-                                decoded_instruction_IE(REMU_bit_position) or
-                                decoded_instruction_IE(REM_bit_position),  
-      division_finished_out  => open,
-      result_div             => open,
-      result_rem             => open
-      --result_div             => res(31 downto 0),
-      --result_rem             => res(63 downto 32)
+      reset                  => not rst_ni,
+      dividend_i             => RS1_Data_IE_int,
+      divisor_i              => RS2_Data_IE_int,
+      div_enable             => div_enable,  
+      div_finished           => div_finished,
+      --result_div             => open,
+      --result_rem             => open
+      result_div             => res(31 downto 0),
+      result_rem             => res(63 downto 32)
     );
 
 
@@ -524,15 +523,6 @@ begin
                 end if;
               end if;
 
-              if decoded_instruction_IE(DIVU_bit_position) = '1' or
-                 decoded_instruction_IE(DIV_bit_position)  = '1' or
-                 decoded_instruction_IE(REMU_bit_position) = '1' or
-                 decoded_instruction_IE(REM_bit_position)  = '1' then
-                if div_count_wire(5) = '1' or div_bypass_en = '1' then
-                  WB_EN_next_IE <= '1';
-                end if;
-              end if;
-
 
               if decoded_instruction_IE(DIVU_bit_position) = '1' then
                 if zero_rs2 = '1' then
@@ -666,6 +656,7 @@ begin
     sw_irq_en                        <= (others => '1'); -- always enabled by default
     sw_irq_int                       <= (others => '0');
     absolute_jump_wires              := (others => '0');
+    div_enable                       <= '0';
     core_busy_IE_wires               := '0';
     IE_except_condition_wires        := '0';
     set_branch_condition_wires       := '0';
@@ -681,7 +672,7 @@ begin
     csr_instr_req                    <= '0';
     csr_op_i                         <= (others => '0');
     csr_addr_i                       <= (others => '0');
-    IE_WB_EN_wire                    <= (WB_EN_next_IE or (instr_rvalid_IE and WB_EN_next_ID  and not decoded_instruction_IE(MUL_bit_position))) and not served_irq_wires(harc_EXEC);
+    IE_WB_EN_wire                    <= (WB_EN_next_IE or div_finished or (instr_rvalid_IE and WB_EN_next_ID  and not decoded_instruction_IE(MUL_bit_position))) and not served_irq_wires(harc_EXEC);
     --branch prediction signals
     halt_update_IE_wire              <= halt_update_IE_pending and not instr_gnt_i; -- latch the halt wire as long as we don't have a valid instr
     branch_taken                     <= '0';
@@ -703,7 +694,7 @@ begin
       MUL                            <= (others => '0');
       MUL_low                        <= (others => '0');
       div_count_wire                 <= (others => '0');
-      res_wire                       <= (others => '0');
+      --res_wire                       <= (others => '0');
       sub                            <= (others => '0');
       nextstate_mul                  <= mult;
       nextstate_mulh                 <= init;
@@ -1023,10 +1014,9 @@ begin
               case state_div is
                 when init =>
                   if RS1_Data_IE(31) = '0' or signed_op = '0' then
-                    res_wire <= (31 downto 0 => '0') & RS1_Data_IE;
+                    RS1_Data_IE_int_wire <= RS1_Data_IE;
                   else
                     RS1_Data_IE_int_wire <= std_logic_vector(signed(not(RS1_Data_IE)) + 1);
-                    res_wire <= (31 downto 0 => '0') & RS1_Data_IE_int_wire;
                   end if;
                   if RS2_Data_IE(31) = '0' or signed_op = '0' then
                     RS2_Data_IE_int_wire <= RS2_Data_IE;
@@ -1036,17 +1026,19 @@ begin
                   nextstate_div <= divide;
                   core_busy_IE_wires := '1';
                 when divide =>
-                  if div_count(5) /= '1' then
-                    div_count_wire <= div_count + 1;
+                  div_enable <= '1';
+                  core_busy_IE_wires := not div_finished;
+                  if core_busy_IE_wires then
+                    --div_count_wire <= div_count + 1;
                     nextstate_div <= divide;
-                    core_busy_IE_wires := '1';
+                    --core_busy_IE_wires := '1';
                   end if;
-                  if sub(32) = '1' then -- RS2_Data_IE is the divisor
-                    res_wire <= res(62 downto 0) & '0';
-                  else
-                    res_wire <= sub(31 downto 0) & res(30 downto 0) & '1';
-                  end if;
-                  sub <= std_logic_vector(('0' & unsigned(res(62 downto 31))) - ('0' & unsigned(RS2_Data_IE_int)));
+                  --if sub(32) = '1' then -- RS2_Data_IE is the divisor
+                  --  res_wire <= res(62 downto 0) & '0';
+                  --else
+                  --  res_wire <= sub(31 downto 0) & res(30 downto 0) & '1';
+                  --end if;
+                  --sub <= std_logic_vector(('0' & unsigned(res(62 downto 31))) - ('0' & unsigned(RS2_Data_IE_int)));
               end case; 
             end if;
 
@@ -1126,7 +1118,7 @@ begin
         state_mul            <= nextstate_mul;
         state_div            <= nextstate_div;
         div_count            <= div_count_wire;
-        res                  <= res_wire;
+        --res                  <= res_wire;
         RS1_Data_IE_int      <= RS1_Data_IE_int_wire;  -- used by the divider as well
         RS2_Data_IE_int      <= RS2_Data_IE_int_wire;  -- used by the divider as well
         --partial_mul_b        <= partial_mul_b_wire;
