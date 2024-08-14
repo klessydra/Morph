@@ -5,7 +5,6 @@ use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 
 -- local packages ------------
-use work.fpu_pkg.all;
 use work.riscv_klessydra.all;
 
 entity fpu_top_wrapper is  
@@ -47,8 +46,8 @@ architecture behavioral of fpu_top_wrapper is
     port (
       clk_i            : in  std_logic;
       rst_ni           : in  std_logic;
-      op_mode          : in  std_logic_vector(FP_INSTR_LEN-1 downto 0);
-      round_mode       : in  std_logic_vector(2 downto 0);
+      op_mode          : in  std_logic_vector(FP_UNIT_INSTR_SET_SIZE-1 downto 0);
+      round_mode       : in  std_logic_vector(7 downto 0);
       data_a           : in  std_logic_vector(size-1 downto 0);
       data_b           : in  std_logic_vector(size-1 downto 0);
       data_c           : in  std_logic_vector(size-1 downto 0);
@@ -80,9 +79,9 @@ begin
   port map(
     clk_i      => clk_i,
     rst_ni     => rst_ni,
-    op_mode    => "00" & decoded_instruction_FLOAT,
+    op_mode    => decoded_instruction_FLOAT,
     --round_mode => instr_word_IE(14 downto 12),
-    round_mode => "000",
+    round_mode => "00000001",
     data_a     => RS1_DATA_FLOAT,
     data_b     => RS2_DATA_FLOAT,
     data_c     => RD_DATA_FLOAT,
