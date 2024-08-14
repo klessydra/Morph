@@ -270,9 +270,9 @@ begin
       WB_EN_next_ID    <= '0'; 
       instr_rvalid_IE  <= '0';
 
-      if served_irq(harc_ID)   = '1'  or
-         flush_decode(harc_ID) = '1'  or
-         -- harc_sleep(harc_ID)   = '1'  or -- used not to let a to-be-flushed harc to pass to the IE, but currently blocks all sleeping harts which is wrong
+      if served_irq(harc_ID)             = '1'  or
+         flush_decode(harc_ID)           = '1'  or
+         -- harc_sleep(harc_ID)            = '1'  or -- used not to let a to-be-flushed harc to pass to the IE, but currently blocks all sleeping harts which is wrong
          core_busy_IE                    = '1'  or 
          core_busy_LS                    = '1'  or 
          ls_parallel_exec                = '0'  or 
