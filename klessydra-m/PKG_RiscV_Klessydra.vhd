@@ -91,7 +91,7 @@ package riscv_klessydra is
   constant LS_UNIT_INSTR_SET_SIZE     : natural := 14;  -- total number of instructions in the ld_str unit
   constant DSP_UNIT_INSTR_SET_SIZE    : natural := 28;  -- total number of instructions in the dsp unit
   constant BRANCHING_INSTR_SET_SIZE   : natural := 3;   -- total number of instructions in the dsp unit
-  constant FP_UNIT_INSTR_SET_SIZE     : natural := 4;   -- total number of instructions in the dsp unit
+  constant FP_UNIT_INSTR_SET_SIZE     : natural := 6;   -- total number of instructions in the dsp unit
 
 
 
@@ -174,10 +174,10 @@ package riscv_klessydra is
   --------------------------------------------------------------------------------------------------
 
   -- FLOAT UNIT INSTR SET --------------------------------------------------------------------------
-  constant FADD_pattern     : std_logic_vector(FP_UNIT_INSTR_SET_SIZE-1 downto 0) := "0001";
-  constant FSUB_pattern     : std_logic_vector(FP_UNIT_INSTR_SET_SIZE-1 downto 0) := "0010";
-  constant FMUL_pattern     : std_logic_vector(FP_UNIT_INSTR_SET_SIZE-1 downto 0) := "0100";
-  constant FDIV_pattern     : std_logic_vector(FP_UNIT_INSTR_SET_SIZE -1 downto 0) := "1000";
+  constant FADD_pattern     : std_logic_vector(FP_UNIT_INSTR_SET_SIZE-1 downto 0) := "000001";
+  constant FSUB_pattern     : std_logic_vector(FP_UNIT_INSTR_SET_SIZE-1 downto 0) := "000010";
+  constant FMUL_pattern     : std_logic_vector(FP_UNIT_INSTR_SET_SIZE-1 downto 0) := "000100";
+  constant FDIV_pattern     : std_logic_vector(FP_UNIT_INSTR_SET_SIZE-1 downto 0) := "001000";
   --------------------------------------------------------------------------------------------------
 
 
