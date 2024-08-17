@@ -641,6 +641,7 @@ package riscv_klessydra is
 --  function rs2(signal instr : in std_logic_vector(31 downto 0)) return integer;
 --  function rd(signal instr  : in std_logic_vector(31 downto 0)) return integer;
 
+  function or_vect_bits(input_vector : in std_logic_vector)              return std_logic;
   function I_immediate(signal instr  : in std_logic_vector(31 downto 0)) return std_logic_vector;
   function S_immediate(signal instr  : in std_logic_vector(31 downto 0)) return std_logic_vector;
   function B_immediate(signal instr  : in std_logic_vector(31 downto 0)) return std_logic_vector;
@@ -686,6 +687,15 @@ package body riscv_klessydra is
   --begin
   --  return to_integer(unsigned(instr(11+(RF_CEIL-1) downto 7)));
   --end;
+
+  function or_vect_bits(input_vector : std_logic_vector) return std_logic is
+    variable result : std_logic := '0';
+  begin
+    for i in input_vector'range loop
+      result := result or input_vector(i);
+    end loop;
+    return result;
+  end function or_vect_bits;
 
   function I_immediate(signal instr : in std_logic_vector(31 downto 0)) return std_logic_vector is
   begin
