@@ -138,7 +138,7 @@ end entity klessydra_top;
 architecture Klessydra of klessydra_top is
 
   constant TPS_CEIL            : natural := integer(ceil(log2(real(THREAD_POOL_SIZE))));
-  constant TPS_BUF_CEIL        : natural := integer(ceil(log2(real(THREAD_POOL_SIZE)))); -- AAA equal as the signal aboe remove it 
+  constant TPS_BUF_CEIL        : natural := integer(ceil(log2(real(THREAD_POOL_SIZE)))); -- AAA equal as the signal above remove it 
   constant SPM_ADDR_WID        : natural := integer(ceil(log2(real(SPM_NUM+1)))); 
   constant SIMD_BITS           : natural := integer(ceil(log2(real(SIMD))));
   constant Data_Width          : natural := 32;

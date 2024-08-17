@@ -738,6 +738,13 @@ begin
                     spm_rs1 <= '1';
                     spm_rs2 <= '1';
                     decoded_instruction_DSP <= KVMUL_pattern;
+                  when KVDIV =>           -- KVDIV_INSTRUCTION
+                    vec_write_rd_ID <= '1';
+                    vec_read_rs1_ID <= '1';
+                    vec_read_rs2_ID <= '1';
+                    spm_rs1 <= '1';
+                    spm_rs2 <= '1';
+                    decoded_instruction_DSP <= KVDIV_pattern;
                   when KVRED =>           -- KVRED_INSTRUCTION
                     vec_read_rs1_ID <= '1';
                     spm_rs1 <= '1';
