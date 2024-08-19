@@ -704,7 +704,7 @@ begin
     if fetch_stage_en = 0 then
       flush_hart_int_wire <= (others => '0');
       for h in harc_range loop
-        IE_flush_hart_ID(h) <= flush_hart_int_wire(h);
+        IE_flush_hart_ID(h) <= flush_hart_int_wire(h)  or flush_hart_pending(h);
       end loop;
     elsif fetch_stage_en = 1 then
       for h in harc_range loop
