@@ -54,7 +54,8 @@ architecture behavioral of fpu_top_wrapper is
       valid_i          : in  std_logic;
       result           : out std_logic_vector(size-1 downto 0);
       div_ready        : out std_logic;
-      div_done         : out std_logic;
+      fp_div_ready     : out std_logic;
+      fp_sqrt_ready    : out std_logic;
       flag_uf          : out std_logic;
       flag_of          : out std_logic;
       flag_in          : out std_logic;
@@ -64,6 +65,8 @@ architecture behavioral of fpu_top_wrapper is
   end component fpu_top;
 
   signal div_ready : std_logic;
+  signal fp_div_ready  : std_logic;
+  signal fp_sqrt_ready : std_logic;
   signal div_done  : std_logic;
   signal FP_RES_WB_wire : std_logic_vector(fp_size-1 downto 0);
 
@@ -77,23 +80,24 @@ begin
     bias          => fp_bias
   )
   port map(
-    clk_i      => clk_i,
-    rst_ni     => rst_ni,
-    op_mode    => decoded_instruction_FLOAT,
+    clk_i         => clk_i,
+    rst_ni        => rst_ni,
+    op_mode       => decoded_instruction_FLOAT,
     --round_mode => instr_word_IE(14 downto 12),
-    round_mode => "00000001",
-    data_a     => RS1_DATA_FLOAT,
-    data_b     => RS2_DATA_FLOAT,
-    data_c     => RD_DATA_FLOAT,
-    valid_i    => float_instr_req,
-    result     => FP_RES_WB_wire,
-    div_ready  => div_ready,
-    div_done   => div_done,
-    flag_in    => float_flag(4),
-    flag_dz    => float_flag(3),
-    flag_uf    => float_flag(2),
-    flag_of    => float_flag(1),
-    flag_nx    => float_flag(0)
+    round_mode    => "00000001",
+    data_a        => RS1_DATA_FLOAT,
+    data_b        => RS2_DATA_FLOAT,
+    data_c        => RD_DATA_FLOAT,
+    valid_i       => float_instr_req,
+    result        => FP_RES_WB_wire,
+    div_ready     => div_ready,
+    fp_div_ready  => fp_div_ready,
+    fp_sqrt_ready => fp_sqrt_ready,
+    flag_in       => float_flag(4),
+    flag_dz       => float_flag(3),
+    flag_uf       => float_flag(2),
+    flag_of       => float_flag(1),
+    flag_nx       => float_flag(0)
   );
 
   -- AAA temporary process until the FPU is pipelined
