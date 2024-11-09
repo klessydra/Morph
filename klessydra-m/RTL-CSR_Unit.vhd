@@ -238,9 +238,11 @@ begin
         if HET_CLUSTER_S1_CORE = 1 then
           MHARTID(h)                          <= std_logic_vector(resize(unsigned(core_id_i) * (THREAD_POOL_SIZE_GLOBAL- THREAD_POOL_SIZE)  + to_unsigned(h, THREAD_ID_SIZE), 10));
           MBHARTID(h)                         <= std_logic_vector(resize(unsigned(core_id_i) * (THREAD_POOL_SIZE_GLOBAL- THREAD_POOL_SIZE)  + to_unsigned(h, THREAD_ID_SIZE), 10));
+          MSTATUS_internal(h)                 <= "01";
+        else
+          MSTATUS_internal(h)                 <= MSTATUS_RESET_VALUE;
         end if;
         MPIP(h)                             <= (others => '0');
-        MSTATUS_internal(h)                 <= "01" when HET_CLUSTER_S1_CORE = 1 else MSTATUS_RESET_VALUE;
         MESTATUS(h)                         <= MESTATUS_RESET_VALUE;
         MEPC_internal(h)                    <= MEPC_RESET_VALUE;
         MCAUSE_internal(h)                  <= MCAUSE_RESET_VALUE;
@@ -588,7 +590,7 @@ begin
                 case csr_op_i is
                   when CSRRW|CSRRWI =>
                     csr_rdata_o_replicated(h) <= MEPC_internal(h);
-                    MEPC_internal(h)              <= csr_wdata_i;
+                    MEPC_internal(h)          <= csr_wdata_i;
                   when CSRRS|CSRRSI =>
                     csr_rdata_o_replicated(h) <= MEPC_internal(h);
                     if(rs1(instr_word_IE) /= 0) then
