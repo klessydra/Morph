@@ -14,6 +14,7 @@ use work.riscv_klessydra.all;
 -- core entity declaration --
 entity klessydra_heterogeneous_cluster is
   generic (
+    INSTRRAM_ORG          : unsigned(31 downto 0) := (others => '0'); -- origin or starting address of the instruction memeory
     THREAD_POOL_SIZE      : natural := 3;   -- Changing the TPS to less than "number of pipeline stages-1" is not allowed. And making it bigger than "pipeline stages-1" is okay but not recommended
     lutram_rf             : natural := 1;   -- Changes the regfile from flip-flop type into BRAM type
     latch_rf              : natural := 0;   -- Changes the regfile from flip-flop type into Latch type (only works if lutram_rf is set to 0)
@@ -257,6 +258,7 @@ signal dsp_except_condition_int2   : std_logic_vector(accl_range);
 
 component klessydra_m_core
 generic(
+    INSTRRAM_ORG            : unsigned(31 downto 0);
     THREAD_POOL_SIZE_GLOBAL : natural := 4;
     THREAD_POOL_SIZE        : natural;
     cluster_size_ceil       : natural;
@@ -458,6 +460,7 @@ begin
 
 T13_inst : klessydra_m_core
   generic map (
+    INSTRRAM_ORG            => INSTRRAM_ORG,
     THREAD_POOL_SIZE_GLOBAL => 4,
     THREAD_POOL_SIZE        => 3,
     cluster_size_ceil       => cluster_size_ceil,
@@ -581,6 +584,7 @@ T13_inst : klessydra_m_core
 
 S1_inst : klessydra_m_core
   generic map (
+    INSTRRAM_ORG            => INSTRRAM_ORG,
     THREAD_POOL_SIZE_GLOBAL => 4,
     THREAD_POOL_SIZE        => 1,
     cluster_size_ceil       => cluster_size_ceil,

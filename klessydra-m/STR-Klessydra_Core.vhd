@@ -43,6 +43,7 @@ use work.riscv_klessydra.all;
 -- core entity declaration --
 entity klessydra_m_core is
   generic (
+    INSTRRAM_ORG            : unsigned(31 downto 0) := (others => '0'); -- origin or starting address of the instruction memeory
     THREAD_POOL_SIZE_GLOBAL : natural := 4;   -- Indicates the total number of harts on the chip, and not only the ones in the cores
     THREAD_POOL_SIZE        : natural := 1;   -- Changing the TPS to less than "number of pipeline stages-1" is not allowed. And making it bigger than "pipeline stages-1" is okay but not recommended
     cluster_size_ceil       : natural := 1;   -- The cieling bits of that identify the size of the cluster
@@ -353,6 +354,7 @@ architecture Klessydra_M of klessydra_m_core is
 
   component Program_Counter
   generic (
+    INSTRRAM_ORG                      : unsigned(31 downto 0);
     THREAD_POOL_SIZE_GLOBAL           : natural;
     THREAD_POOL_SIZE                  : natural;
     HET_CLUSTER_S1_CORE               : natural;
@@ -794,6 +796,7 @@ begin
 
   Prg_Ctr : Program_Counter
     generic map (
+      INSTRRAM_ORG                => INSTRRAM_ORG,
       THREAD_POOL_SIZE_GLOBAL     => THREAD_POOL_SIZE_GLOBAL,
       THREAD_POOL_SIZE            => THREAD_POOL_SIZE,
       HET_CLUSTER_S1_CORE         => HET_CLUSTER_S1_CORE,

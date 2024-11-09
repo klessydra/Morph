@@ -5,7 +5,7 @@
 --  Date Modified: 17-11-2019                                                                               --
 --------------------------------------------------------------------------------------------------------------
 --  Program Counter Managing Units -- synchronous process, sinle cycle.                                     --
---  Note: in the present version, gives priority to branching over trapping, except LSU and DSP traps       -- 
+--  Note: in the present version, gives priority to branching over trapping, except LSU and DSP traps       --
 --  i.e. branch instructions are not interruptible. This can be changed but may be unsafe.                  --
 --  Implements as many PC units as the  number of harts supported                                           --
 --  This entity also implements the hardware context counters that interleve the harts in the core.         --
@@ -24,6 +24,7 @@ use work.riscv_klessydra.all;
 
 entity Program_Counter is
   generic (
+    INSTRRAM_ORG                      : unsigned(31 downto 0);
     THREAD_POOL_SIZE_GLOBAL           : natural;
     THREAD_POOL_SIZE                  : natural;
     HET_CLUSTER_S1_CORE               : natural;
@@ -94,6 +95,9 @@ end entity;
 
 
 architecture PC of Program_counter is
+
+  constant ORIGIN_ADDRESS                : unsigned(31 downto 0) := INSTRRAM_ORG + 128;
+  constant HET_CLUSTER_S1_ORIGIN_ADDRESS : unsigned(31 downto 0) := INSTRRAM_ORG + 160;
 
   subtype harc_range is natural range THREAD_POOL_SIZE-1 downto 0;
   subtype accl_range is integer range ACCL_NUM-1 downto 0;
@@ -403,7 +407,6 @@ begin
                                 and halt_update(h) = '0'
                            else '0';
 
-
     pc_update_sync : process (clk_i, rst_ni)
     begin
       if rst_ni = '0' then 
@@ -416,9 +419,9 @@ begin
         served_mret_condition_lat(h)         <= '0';
         -- The S1 core in the hetergeneous cluster does not have a reset state and takes only the state of the hart that is doing the context switch
         if HET_CLUSTER_S1_CORE = 1 then -- since at reset we start execution with the T13 core
-          pc(h) <= (31 downto 8 => '0') & std_logic_vector(to_unsigned(160,8)); -- Put address 0x0000_00A0 which is the pointer to the context load instruction
+          pc(h) <= std_logic_vector(HET_CLUSTER_S1_ORIGIN_ADDRESS); -- Put address 0x0000_00A0 which is the pointer to the context load instruction
         else
-          pc(h) <= (31 downto 8 => '0') & std_logic_vector(to_unsigned(128,8)); -- Put address 0x0000_0080 which is the pointer to the reset handler
+          pc(h) <= std_logic_vector(ORIGIN_ADDRESS); -- Put address 0x0000_0080 which is the pointer to the reset handler
         end if;
       elsif rising_edge(clk_i) then
         if fetch_enable_i = '1' then
